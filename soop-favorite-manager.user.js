@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SOOP 즐겨찾기 한눈에 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.4.1
-// @description  즐겨찾기 스트리머를 한 화면에서 확인하고 알림·고정·그룹 설정을 빠르게 관리합니다.
+// @version      1.5.0
+// @description  즐겨찾기 스트리머를 한 화면에서 확인하고 상태·그룹별로 빠르게 관리합니다.
 // @author       Codex
 // @homepageURL  https://github.com/heggng/soop-unified-manager
 // @supportURL   https://github.com/heggng/soop-unified-manager/issues
@@ -29,8 +29,15 @@
 
   const state = {
     filter: 'all',
+    groupFilter: 'all',
     activeRoot: null,
     scheduled: false,
+    groups: [],
+    groupMemberships: new Map(),
+    groupListStarted: false,
+    groupListPromise: null,
+    groupMemberPromises: new Map(),
+    pendingGroupFilter: '',
   };
 
   const style = document.createElement('style');
@@ -212,17 +219,6 @@
       .my_adm_layer
       .strm_area
       .total_wrap {
-      flex: 0 0 auto;
-      min-height: 38px;
-      margin: 0 !important;
-      padding: 0 28px 8px !important;
-    }
-
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .total_wrap
-      .pin_hide {
       display: none !important;
     }
 
@@ -240,13 +236,24 @@
       box-sizing: border-box;
     }
 
-    .${PREFIX}-filters {
+    .${PREFIX}-filters,
+    .${PREFIX}-group-filters {
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
-    .${PREFIX}-filters button {
+    .${PREFIX}-group-filters {
+      flex: 1 1 auto;
+      overflow-x: auto;
+      min-width: 160px;
+      padding: 0 8px 2px 12px;
+      border-left: 1px solid var(--soop-fm-border);
+      scrollbar-width: thin;
+    }
+
+    .${PREFIX}-filters button,
+    .${PREFIX}-group-filters button {
       display: inline-flex;
       flex: 0 0 auto;
       align-items: center;
@@ -264,13 +271,15 @@
       cursor: pointer;
     }
 
-    .${PREFIX}-filters button:hover {
+    .${PREFIX}-filters button:hover,
+    .${PREFIX}-group-filters button:hover {
       border-color: var(--soop-fm-border);
       background: var(--soop-fm-card);
       color: var(--soop-fm-text);
     }
 
-    .${PREFIX}-filters button[aria-pressed="true"] {
+    .${PREFIX}-filters button[aria-pressed="true"],
+    .${PREFIX}-group-filters button[aria-pressed="true"] {
       border-color: rgba(1, 130, 255, 0.28);
       background: rgba(1, 130, 255, 0.12);
       color: var(--soop-fm-accent);
@@ -290,6 +299,17 @@
       font-size: 11px;
       font-style: normal;
       text-align: center;
+    }
+
+    .${PREFIX}-group-filters button {
+      flex: 0 0 auto;
+      padding-right: 13px;
+      padding-left: 13px;
+    }
+
+    .${PREFIX}-group-filters button:disabled {
+      opacity: 0.55;
+      cursor: wait;
     }
 
     .${PREFIX}-summary {
@@ -656,6 +676,10 @@
     return String(value ?? '').replace(/\s+/g, ' ').trim();
   }
 
+  function normalizeId(value) {
+    return normalize(value).toLocaleLowerCase('en-US');
+  }
+
   function setText(element, value) {
     if (element && element.textContent !== value) {
       element.textContent = value;
@@ -738,6 +762,48 @@
     }
   }
 
+  function renderGroupButtons(toolbar) {
+    const container = toolbar?.querySelector(`.${PREFIX}-group-filters`);
+    if (!container) {
+      return;
+    }
+
+    const signature = JSON.stringify(
+      state.groups.map((group) => [group.id, group.title]),
+    );
+    if (container.dataset.renderKey === signature) {
+      return;
+    }
+
+    container.dataset.renderKey = signature;
+    container.replaceChildren();
+    if (state.groups.length === 0) {
+      return;
+    }
+
+    const allButton = document.createElement('button');
+    allButton.type = 'button';
+    allButton.dataset.groupFilter = 'all';
+    allButton.textContent = '그룹 전체';
+    allButton.setAttribute(
+      'aria-pressed',
+      String(state.groupFilter === 'all'),
+    );
+    container.append(allButton);
+
+    for (const group of state.groups) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.groupFilter = group.id;
+      button.textContent = group.title;
+      button.setAttribute(
+        'aria-pressed',
+        String(state.groupFilter === group.id),
+      );
+      container.append(button);
+    }
+  }
+
   function createToolbar() {
     const toolbar = document.createElement('div');
     toolbar.className = `${PREFIX}-toolbar`;
@@ -748,11 +814,17 @@
     filters.setAttribute('aria-label', '스트리머 빠른 필터');
     appendFilterButtons(filters);
 
+    const groupFilters = document.createElement('div');
+    groupFilters.className = `${PREFIX}-group-filters`;
+    groupFilters.setAttribute('role', 'group');
+    groupFilters.setAttribute('aria-label', '즐겨찾기 그룹 필터');
+
     const summary = document.createElement('div');
     summary.className = `${PREFIX}-summary`;
     summary.setAttribute('aria-live', 'polite');
 
-    toolbar.append(filters, summary);
+    toolbar.append(filters, groupFilters, summary);
+    renderGroupButtons(toolbar);
 
     toolbar.addEventListener('click', (event) => {
       const button = event.target.closest('button');
@@ -766,6 +838,9 @@
         return;
       }
 
+      if (button.dataset.groupFilter) {
+        selectGroup(button.dataset.groupFilter, button);
+      }
     });
 
     return toolbar;
@@ -809,6 +884,7 @@
     }
 
     refreshDashboard(root);
+    loadFavoriteGroups();
   }
 
   function enhanceRow(row) {
@@ -909,6 +985,277 @@
     setText(pinLabel, isPinned ? '고정 해제' : '상단 고정');
   }
 
+  async function fetchJson(path, timeout = 6000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(path, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`SOOP 요청 실패 (${response.status})`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error('SOOP 응답 시간이 초과되었습니다.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function findArrayPayload(payload, depth = 0) {
+    if (Array.isArray(payload)) {
+      return payload.flat(Infinity);
+    }
+    if (!payload || typeof payload !== 'object' || depth > 4) {
+      return [];
+    }
+
+    for (const key of ['data', 'result', 'list', 'items', 'favorites']) {
+      if (key in payload) {
+        const found = findArrayPayload(payload[key], depth + 1);
+        if (found.length > 0 || Array.isArray(payload[key])) {
+          return found;
+        }
+      }
+    }
+
+    for (const value of Object.values(payload)) {
+      const found = findArrayPayload(value, depth + 1);
+      if (found.length > 0) {
+        return found;
+      }
+    }
+    return [];
+  }
+
+  function normalizeGroup(item) {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+    const id =
+      item.idx ??
+      item.groupIdx ??
+      item.group_idx ??
+      item.favoriteGroupIdx ??
+      item.id;
+    const title = normalize(
+      item.title ??
+        item.groupTitle ??
+        item.group_title ??
+        item.groupName ??
+        item.name,
+    );
+    if (id === undefined || id === null || !title || title === '전체') {
+      return null;
+    }
+    return { id: String(id), title };
+  }
+
+  function readGroupsFromPage() {
+    const selectors = [
+      '[data-group-id]',
+      '[data-group-idx]',
+      '[data-group_idx]',
+      'a[href*="groupId="]',
+      'a[href*="group_id="]',
+    ].join(',');
+    const groups = [];
+
+    for (const element of document.querySelectorAll(selectors)) {
+      if (element.closest(`.${PREFIX}-root`)) {
+        continue;
+      }
+
+      let id =
+        element.getAttribute('data-group-id') ||
+        element.getAttribute('data-group-idx') ||
+        element.getAttribute('data-group_idx') ||
+        '';
+      if (!id && element.matches('a[href]')) {
+        try {
+          const url = new URL(element.getAttribute('href'), location.origin);
+          id =
+            url.searchParams.get('groupId') ||
+            url.searchParams.get('group_id') ||
+            '';
+        } catch {
+          // 다른 DOM 후보를 확인합니다.
+        }
+      }
+
+      const title = normalize(element.textContent).replace(/\s+\d+$/u, '');
+      if (!id || !title || title === '전체') {
+        continue;
+      }
+      groups.push({ id: String(id), title });
+    }
+    return groups;
+  }
+
+  function uniqueGroups(groups) {
+    return groups.filter(
+      (group, index, list) =>
+        group &&
+        list.findIndex((candidate) => candidate?.id === group.id) === index,
+    );
+  }
+
+  async function loadFavoriteGroups() {
+    if (state.groupListStarted) {
+      return state.groupListPromise;
+    }
+
+    state.groupListStarted = true;
+    state.groupListPromise = (async () => {
+      let groups = readGroupsFromPage();
+      if (groups.length === 0) {
+        try {
+          const payload = await fetchJson('/api/favorite/group/list', 5000);
+          groups = findArrayPayload(payload)
+            .map(normalizeGroup)
+            .filter(Boolean);
+        } catch {
+          // 실패하더라도 관리 화면에는 로딩 또는 오류 문구를 남기지 않습니다.
+        }
+      }
+      state.groups = uniqueGroups(groups);
+
+      for (const toolbar of document.querySelectorAll(
+        `.${PREFIX}-toolbar`,
+      )) {
+        renderGroupButtons(toolbar);
+      }
+      refreshDashboard(state.activeRoot);
+    })();
+    return state.groupListPromise;
+  }
+
+  function getRowUserId(row) {
+    if (row.dataset.soopFmUserId) {
+      return row.dataset.soopFmUserId;
+    }
+
+    for (const link of row.querySelectorAll(
+      '.nick[href], .thumb a[href], a[href*="/station/"]',
+    )) {
+      try {
+        const url = new URL(link.getAttribute('href'), location.origin);
+        const candidate = decodeURIComponent(
+          url.searchParams.get('bjid') ||
+            url.searchParams.get('user_id') ||
+            url.searchParams.get('userId') ||
+            url.pathname.split('/').filter(Boolean).at(-1) ||
+            '',
+        );
+        if (
+          candidate &&
+          !['favorite', 'my', 'station'].includes(normalizeId(candidate))
+        ) {
+          row.dataset.soopFmUserId = candidate;
+          return candidate;
+        }
+      } catch {
+        // 다음 링크 후보를 확인합니다.
+      }
+    }
+
+    const dataId =
+      row.dataset.userId ||
+      row.getAttribute('data-user-id') ||
+      row.querySelector('[data-user-id]')?.getAttribute('data-user-id') ||
+      '';
+    if (dataId) {
+      row.dataset.soopFmUserId = dataId;
+    }
+    return dataId;
+  }
+
+  function getFavoriteId(item) {
+    if (!item || typeof item !== 'object') {
+      return '';
+    }
+    return normalize(
+      item.userId ??
+        item.user_id ??
+        item.favoriteId ??
+        item.favorite_id ??
+        item.bjId ??
+        item.bj_id ??
+        item.streamerId ??
+        item.streamer_id ??
+        item.user?.id ??
+        item.streamer?.id,
+    );
+  }
+
+  async function loadGroupMembers(groupId) {
+    if (state.groupMemberships.has(groupId)) {
+      return state.groupMemberships.get(groupId);
+    }
+    if (state.groupMemberPromises.has(groupId)) {
+      return state.groupMemberPromises.get(groupId);
+    }
+
+    const request = (async () => {
+      const payload = await fetchJson(
+        `/api/favorite/${encodeURIComponent(groupId)}`,
+        6000,
+      );
+      const members = new Set(
+        findArrayPayload(payload)
+          .map(getFavoriteId)
+          .map(normalizeId)
+          .filter(Boolean),
+      );
+      state.groupMemberships.set(groupId, members);
+      return members;
+    })();
+
+    state.groupMemberPromises.set(groupId, request);
+    try {
+      return await request;
+    } finally {
+      state.groupMemberPromises.delete(groupId);
+    }
+  }
+
+  async function selectGroup(groupId, button) {
+    if (groupId === 'all' || groupId === state.groupFilter) {
+      state.pendingGroupFilter = '';
+      state.groupFilter = 'all';
+      refreshDashboard(state.activeRoot);
+      return;
+    }
+
+    state.pendingGroupFilter = groupId;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      await loadGroupMembers(groupId);
+      if (state.pendingGroupFilter === groupId) {
+        state.groupFilter = groupId;
+        refreshDashboard(state.activeRoot);
+      }
+    } catch (error) {
+      if (state.pendingGroupFilter === groupId) {
+        state.pendingGroupFilter = '';
+      }
+      showToast(
+        error?.message || '즐겨찾기 그룹을 불러오지 못했습니다.',
+      );
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+  }
+
   async function runNativeMenuAction(row, action) {
     const menuButton = row.querySelector('button.more_dot');
     if (!menuButton) {
@@ -976,7 +1323,12 @@
       return;
     }
 
+    renderGroupButtons(toolbar);
     const rows = [...list.children].filter((row) => row.tagName === 'LI');
+    const activeMembers =
+      state.groupFilter === 'all'
+        ? null
+        : state.groupMemberships.get(state.groupFilter);
     const counts = {
       all: rows.length,
       live: 0,
@@ -998,7 +1350,10 @@
 
       const statusMatches =
         state.filter === 'all' || Boolean(flags[state.filter]);
-      row.hidden = !statusMatches;
+      const groupMatches =
+        !activeMembers ||
+        activeMembers.has(normalizeId(getRowUserId(row)));
+      row.hidden = !statusMatches || !groupMatches;
     }
 
     setText(
@@ -1012,8 +1367,21 @@
       setText(button.querySelector('em'), String(counts[id] ?? 0));
     }
 
+    for (const button of toolbar.querySelectorAll(
+      'button[data-group-filter]',
+    )) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.dataset.groupFilter === state.groupFilter),
+      );
+    }
+
     const visibleCount = rows.filter((row) => !row.hidden).length;
+    const selectedGroup = state.groups.find(
+      (group) => group.id === state.groupFilter,
+    );
     const summaryParts = [
+      selectedGroup?.title,
       `표시 ${visibleCount}명`,
       `LIVE ${counts.live}명`,
       `고정 ${counts.pinned}명`,

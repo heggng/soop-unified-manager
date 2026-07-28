@@ -9,7 +9,7 @@ Tampermonkey 사용자 스크립트입니다. 별도의 웹 대시보드나 외�
 네이버 웨일에 Tampermonkey가 설치되어 있다면 아래 링크를 열고
 Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 
-- **[SOOP 즐겨찾기 관리 v1.4.1 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
+- **[SOOP 즐겨찾기 관리 v1.5.0 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
 
 > `.user.js` 파일을 Windows 탐색기에서 더블클릭하지 마세요. Windows Script
 > Host용 파일이 아니므로 `800A03EA` 오류가 발생합니다.
@@ -17,13 +17,14 @@ Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 ## 주요 기능
 
 - 전체·LIVE·고정·알림 상태 필터
+- 즐겨찾기 그룹 버튼과 그룹별 스트리머 필터
 - 알림 켜기·끄기, 즐겨찾기 해제, 그룹 설정, 상단 고정·해제
 - 넓은 카드형 관리 화면
 - SOOP 다크 모드 및 반응형 화면 지원
 - 로그인 세션 안에서만 작동하며 외부 서버로 계정 정보 전송 없음
 
-즐겨찾기 그룹 자동 조회, 구독 관리, `알림 꺼짐`, `고정 숨기기`,
-화면 밀도 전환 기능은 제거했습니다.
+`전체 알림`, `최근 추가`, `고정 숨기기`, 화면 밀도 전환 및 구독 관리
+기능은 제거했습니다. 그룹은 별도의 로딩 문구 없이 버튼만 표시합니다.
 
 ## 사용 방법
 
@@ -33,7 +34,7 @@ Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 
 ## 파일
 
-- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.4.1
+- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.5.0
 - `INSTALL.md`: 자세한 설치 및 사용 안내
 
 ## 주의
