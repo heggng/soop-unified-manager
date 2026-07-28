@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SOOP 즐겨찾기 한눈에 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.4.0
-// @description  즐겨찾기 스트리머와 그룹을 한 화면에서 확인하고 알림·고정·그룹 설정을 빠르게 관리합니다.
+// @version      1.4.1
+// @description  즐겨찾기 스트리머를 한 화면에서 확인하고 알림·고정·그룹 설정을 빠르게 관리합니다.
 // @author       Codex
 // @homepageURL  https://github.com/heggng/soop-unified-manager
 // @supportURL   https://github.com/heggng/soop-unified-manager/issues
@@ -20,27 +20,17 @@
   'use strict';
 
   const PREFIX = 'soop-fm';
-  const STORAGE_KEY = `${PREFIX}:density`;
   const FILTERS = [
     { id: 'all', label: '전체' },
     { id: 'live', label: 'LIVE' },
     { id: 'pinned', label: '고정' },
-    { id: 'alarm-on', label: '알림 켜짐' },
+    { id: 'alarm-on', label: '알림' },
   ];
 
   const state = {
     filter: 'all',
-    groupFilter: 'all',
-    density: readDensity(),
     activeRoot: null,
     scheduled: false,
-    groups: [],
-    groupMemberships: new Map(),
-    groupLoading: false,
-    groupLoaded: false,
-    groupError: '',
-    groupLoadPromise: null,
-    groupRefreshTimers: [],
   };
 
   const style = document.createElement('style');
@@ -228,6 +218,14 @@
       padding: 0 28px 8px !important;
     }
 
+    .layer_container.${PREFIX}-root
+      .my_adm_layer
+      .strm_area
+      .total_wrap
+      .pin_hide {
+      display: none !important;
+    }
+
     .${PREFIX}-toolbar {
       display: flex;
       flex: 0 0 auto;
@@ -242,25 +240,13 @@
       box-sizing: border-box;
     }
 
-    .${PREFIX}-filters,
-    .${PREFIX}-group-filters {
+    .${PREFIX}-filters {
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
-    .${PREFIX}-group-filters {
-      flex: 1 1 300px;
-      overflow-x: auto;
-      min-width: 120px;
-      padding: 0 4px 2px 12px;
-      border-left: 1px solid var(--soop-fm-border);
-      scrollbar-width: thin;
-    }
-
-    .${PREFIX}-filters button,
-    .${PREFIX}-group-filters button,
-    .${PREFIX}-density {
+    .${PREFIX}-filters button {
       display: inline-flex;
       flex: 0 0 auto;
       align-items: center;
@@ -278,16 +264,13 @@
       cursor: pointer;
     }
 
-    .${PREFIX}-filters button:hover,
-    .${PREFIX}-group-filters button:hover,
-    .${PREFIX}-density:hover {
+    .${PREFIX}-filters button:hover {
       border-color: var(--soop-fm-border);
       background: var(--soop-fm-card);
       color: var(--soop-fm-text);
     }
 
-    .${PREFIX}-filters button[aria-pressed="true"],
-    .${PREFIX}-group-filters button[aria-pressed="true"] {
+    .${PREFIX}-filters button[aria-pressed="true"] {
       border-color: rgba(1, 130, 255, 0.28);
       background: rgba(1, 130, 255, 0.12);
       color: var(--soop-fm-accent);
@@ -299,8 +282,7 @@
       color: var(--soop-fm-live);
     }
 
-    .${PREFIX}-filters button em,
-    .${PREFIX}-group-filters button em {
+    .${PREFIX}-filters button em {
       min-width: 18px;
       padding: 2px 5px;
       border-radius: 999px;
@@ -308,15 +290,6 @@
       font-size: 11px;
       font-style: normal;
       text-align: center;
-    }
-
-    .${PREFIX}-group-message {
-      align-self: center;
-      padding: 0 10px;
-      color: var(--soop-fm-muted);
-      font: 550 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      white-space: nowrap;
     }
 
     .${PREFIX}-summary {
@@ -328,11 +301,6 @@
         "Noto Sans KR", sans-serif;
       white-space: nowrap;
       text-overflow: ellipsis;
-    }
-
-    .${PREFIX}-density {
-      border-color: var(--soop-fm-border);
-      background: var(--soop-fm-card);
     }
 
     .layer_container.${PREFIX}-root
@@ -449,37 +417,6 @@
       max-width: none !important;
       white-space: nowrap;
       text-overflow: ellipsis;
-    }
-
-    .${PREFIX}-group-badges {
-      display: inline-flex;
-      flex: 0 1 auto;
-      align-items: center;
-      gap: 4px;
-      overflow: hidden;
-      min-width: 0;
-    }
-
-    .${PREFIX}-group-badge {
-      display: inline-flex;
-      flex: 0 1 auto;
-      overflow: hidden;
-      max-width: 92px;
-      padding: 3px 7px;
-      border: 1px solid rgba(1, 130, 255, 0.22);
-      border-radius: 999px;
-      background: rgba(1, 130, 255, 0.1);
-      color: var(--soop-fm-accent);
-      font: 650 10.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .${PREFIX}-group-badge.is-ungrouped {
-      border-color: var(--soop-fm-border);
-      background: var(--soop-fm-surface);
-      color: var(--soop-fm-muted);
     }
 
     .layer_container.${PREFIX}-root
@@ -654,61 +591,6 @@
       display: flex;
     }
 
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .my_adm_layer
-      .strm_area
-      .strm_list {
-      gap: 7px !important;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .my_adm_layer
-      .strm_area
-      .strm_list
-      > li {
-      min-height: 80px !important;
-      padding-top: 4px !important;
-      padding-bottom: 4px !important;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .strm_list
-      > li
-      .thumb
-      a {
-      width: 52px !important;
-      height: 52px !important;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .strm_list
-      > li
-      .thumb
-      img {
-      width: 48px !important;
-      height: 48px !important;
-    }
-
-    @media (max-width: 1100px) {
-      .${PREFIX}-toolbar {
-        align-items: flex-start;
-        flex-wrap: wrap;
-      }
-
-      .${PREFIX}-group-filters {
-        order: 3;
-        flex: 1 1 100%;
-        padding-top: 7px;
-        padding-left: 0;
-        border-top: 1px solid var(--soop-fm-border);
-        border-left: 0;
-      }
-
-      .${PREFIX}-summary {
-        margin-left: auto;
-      }
-    }
-
     @media (max-width: 680px) {
       #${PREFIX}-fab {
         top: 94px;
@@ -752,8 +634,7 @@
         padding: 7px;
       }
 
-      .${PREFIX}-filters,
-      .${PREFIX}-group-filters {
+      .${PREFIX}-filters {
         flex: 1 1 100%;
         overflow-x: auto;
       }
@@ -771,30 +652,8 @@
     }
   `;
 
-  function readDensity() {
-    try {
-      return localStorage.getItem(STORAGE_KEY) === 'comfortable'
-        ? 'comfortable'
-        : 'compact';
-    } catch {
-      return 'compact';
-    }
-  }
-
-  function writeDensity(value) {
-    try {
-      localStorage.setItem(STORAGE_KEY, value);
-    } catch {
-      // 저장소가 차단되어도 현재 세션에서는 정상 동작합니다.
-    }
-  }
-
   function normalize(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
-  }
-
-  function normalizeId(value) {
-    return normalize(value).toLocaleLowerCase('en-US');
   }
 
   function setText(element, value) {
@@ -879,60 +738,6 @@
     }
   }
 
-  function renderGroupFilters(toolbar) {
-    const container = toolbar?.querySelector(`.${PREFIX}-group-filters`);
-    if (!container) {
-      return;
-    }
-
-    const signature = JSON.stringify({
-      loading: state.groupLoading,
-      loaded: state.groupLoaded,
-      error: state.groupError,
-      groups: state.groups.map((group) => [group.id, group.title]),
-    });
-    if (container.dataset.renderKey === signature) {
-      return;
-    }
-
-    container.dataset.renderKey = signature;
-    container.replaceChildren();
-
-    if (state.groupLoading && !state.groupLoaded) {
-      const loading = document.createElement('span');
-      loading.className = `${PREFIX}-group-message`;
-      loading.textContent = '그룹 불러오는 중…';
-      container.append(loading);
-      return;
-    }
-
-    const filters = [{ id: 'all', title: '모든 그룹' }, ...state.groups];
-    for (const group of filters) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.dataset.groupFilter = String(group.id);
-      button.setAttribute(
-        'aria-pressed',
-        String(state.groupFilter === String(group.id)),
-      );
-
-      const label = document.createElement('span');
-      label.textContent = group.title;
-      const count = document.createElement('em');
-      count.textContent = '0';
-      button.append(label, count);
-      container.append(button);
-    }
-
-    if (state.groupError) {
-      const error = document.createElement('span');
-      error.className = `${PREFIX}-group-message`;
-      error.textContent = '그룹을 불러오지 못했습니다.';
-      error.title = state.groupError;
-      container.append(error);
-    }
-  }
-
   function createToolbar() {
     const toolbar = document.createElement('div');
     toolbar.className = `${PREFIX}-toolbar`;
@@ -943,22 +748,11 @@
     filters.setAttribute('aria-label', '스트리머 빠른 필터');
     appendFilterButtons(filters);
 
-    const groupFilters = document.createElement('div');
-    groupFilters.className = `${PREFIX}-group-filters`;
-    groupFilters.setAttribute('role', 'group');
-    groupFilters.setAttribute('aria-label', '즐겨찾기 그룹 필터');
-
     const summary = document.createElement('div');
     summary.className = `${PREFIX}-summary`;
     summary.setAttribute('aria-live', 'polite');
 
-    const density = document.createElement('button');
-    density.type = 'button';
-    density.className = `${PREFIX}-density`;
-    density.dataset.action = 'density';
-
-    toolbar.append(filters, groupFilters, summary, density);
-    renderGroupFilters(toolbar);
+    toolbar.append(filters, summary);
 
     toolbar.addEventListener('click', (event) => {
       const button = event.target.closest('button');
@@ -972,18 +766,6 @@
         return;
       }
 
-      if (button.dataset.groupFilter) {
-        state.groupFilter = button.dataset.groupFilter;
-        refreshDashboard(state.activeRoot);
-        return;
-      }
-
-      if (button.dataset.action === 'density') {
-        state.density =
-          state.density === 'compact' ? 'comfortable' : 'compact';
-        writeDensity(state.density);
-        refreshDashboard(state.activeRoot);
-      }
     });
 
     return toolbar;
@@ -994,102 +776,6 @@
     empty.className = `${PREFIX}-empty`;
     empty.textContent = '선택한 조건에 맞는 스트리머가 없습니다.';
     return empty;
-  }
-
-  function getRowUserId(row) {
-    if (row.dataset.soopFmUserId) {
-      return row.dataset.soopFmUserId;
-    }
-
-    const links = row.querySelectorAll(
-      '.nick[href], .thumb a[href], a[href*="/station/"]',
-    );
-    for (const link of links) {
-      try {
-        const url = new URL(link.getAttribute('href'), location.origin);
-        const queryId =
-          url.searchParams.get('bjid') ||
-          url.searchParams.get('user_id') ||
-          url.searchParams.get('userId');
-        const parts = url.pathname.split('/').filter(Boolean);
-        const pathId = parts.at(-1);
-        const candidate = decodeURIComponent(queryId || pathId || '');
-        if (
-          candidate &&
-          !['favorite', 'my', 'station'].includes(normalizeId(candidate))
-        ) {
-          row.dataset.soopFmUserId = candidate;
-          return candidate;
-        }
-      } catch {
-        // 다음 링크 후보를 확인합니다.
-      }
-    }
-
-    const dataId =
-      row.dataset.userId ||
-      row.getAttribute('data-user-id') ||
-      row.querySelector('[data-user-id]')?.getAttribute('data-user-id');
-    if (dataId) {
-      row.dataset.soopFmUserId = dataId;
-      return dataId;
-    }
-    return '';
-  }
-
-  function getRowGroupIds(row) {
-    const userId = normalizeId(getRowUserId(row));
-    return state.groupMemberships.get(userId) || [];
-  }
-
-  function renderRowGroupBadges(row) {
-    const nick = row.querySelector('.nick_wrap .nick');
-    if (!nick) {
-      return;
-    }
-
-    let badges = nick.querySelector(`:scope > .${PREFIX}-group-badges`);
-    if (!badges) {
-      badges = document.createElement('span');
-      badges.className = `${PREFIX}-group-badges`;
-      nick.append(badges);
-    }
-
-    if (!state.groupLoaded) {
-      badges.replaceChildren();
-      badges.removeAttribute('title');
-      return;
-    }
-
-    const membership = new Set(getRowGroupIds(row).map(String));
-    const groups = state.groups.filter((group) =>
-      membership.has(String(group.id)),
-    );
-    const signature = JSON.stringify(groups.map((group) => group.id));
-    if (badges.dataset.renderKey === signature) {
-      return;
-    }
-
-    badges.dataset.renderKey = signature;
-    badges.replaceChildren();
-    badges.title = groups.length
-      ? `즐겨찾기 그룹: ${groups.map((group) => group.title).join(', ')}`
-      : '즐겨찾기 그룹: 미분류';
-
-    if (groups.length === 0) {
-      const badge = document.createElement('span');
-      badge.className = `${PREFIX}-group-badge is-ungrouped`;
-      badge.textContent = '미분류';
-      badges.append(badge);
-      return;
-    }
-
-    for (const group of groups) {
-      const badge = document.createElement('span');
-      badge.className = `${PREFIX}-group-badge`;
-      badge.textContent = group.title;
-      badges.append(badge);
-    }
   }
 
   function enhanceRoot(root) {
@@ -1123,13 +809,10 @@
     }
 
     refreshDashboard(root);
-    loadFavoriteGroups();
   }
 
   function enhanceRow(row) {
     row.classList.add(`${PREFIX}-card`);
-    getRowUserId(row);
-    renderRowGroupBadges(row);
 
     const alarmButton = row.querySelector(
       '.util_btn_wrap button.alarm_on, .util_btn_wrap button.alarm_off',
@@ -1226,235 +909,6 @@
     setText(pinLabel, isPinned ? '고정 해제' : '상단 고정');
   }
 
-  async function fetchJson(path) {
-    const response = await fetch(path, {
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
-    if (!response.ok) {
-      throw new Error(`그룹 API 요청 실패 (${response.status})`);
-    }
-    return response.json();
-  }
-
-  function findArrayPayload(payload, depth = 0) {
-    if (Array.isArray(payload)) {
-      return payload.flat(Infinity);
-    }
-    if (!payload || typeof payload !== 'object' || depth > 4) {
-      return [];
-    }
-
-    for (const key of ['data', 'result', 'list', 'items', 'favorites']) {
-      if (key in payload) {
-        const found = findArrayPayload(payload[key], depth + 1);
-        if (found.length > 0 || Array.isArray(payload[key])) {
-          return found;
-        }
-      }
-    }
-
-    for (const value of Object.values(payload)) {
-      const found = findArrayPayload(value, depth + 1);
-      if (found.length > 0) {
-        return found;
-      }
-    }
-    return [];
-  }
-
-  function normalizeGroup(item) {
-    if (!item || typeof item !== 'object') {
-      return null;
-    }
-    const id =
-      item.idx ??
-      item.groupIdx ??
-      item.group_idx ??
-      item.favoriteGroupIdx ??
-      item.id;
-    const title = normalize(
-      item.title ??
-        item.groupTitle ??
-        item.group_title ??
-        item.groupName ??
-        item.name,
-    );
-    if (id === undefined || id === null || !title) {
-      return null;
-    }
-    return { id: String(id), title };
-  }
-
-  function getFavoriteId(item) {
-    if (!item || typeof item !== 'object') {
-      return '';
-    }
-    return normalize(
-      item.userId ??
-        item.user_id ??
-        item.favoriteId ??
-        item.favorite_id ??
-        item.bjId ??
-        item.bj_id ??
-        item.streamerId ??
-        item.streamer_id ??
-        item.user?.id ??
-        item.streamer?.id,
-    );
-  }
-
-  function getAllRows() {
-    const root = state.activeRoot;
-    const list = root?.querySelector('.my_adm_layer .strm_area .strm_list');
-    return list
-      ? [...list.children].filter((row) => row.tagName === 'LI')
-      : [];
-  }
-
-  async function mapWithConcurrency(items, limit, worker) {
-    let index = 0;
-    const runners = Array.from(
-      { length: Math.min(limit, items.length) },
-      async () => {
-        while (index < items.length) {
-          const current = items[index];
-          index += 1;
-          await worker(current);
-        }
-      },
-    );
-    await Promise.all(runners);
-  }
-
-  async function loadMembershipsByFavorite(groups, memberships) {
-    const userIds = [
-      ...new Set(getAllRows().map(getRowUserId).filter(Boolean)),
-    ];
-
-    await mapWithConcurrency(userIds, 6, async (userId) => {
-      try {
-        const payload = await fetchJson(
-          `/api/favorite/group/list?favorite_id=${encodeURIComponent(userId)}`,
-        );
-        const selected = findArrayPayload(payload)
-          .filter((item) => item?.already === true)
-          .map(normalizeGroup)
-          .filter(Boolean)
-          .map((group) => String(group.id));
-        if (selected.length > 0) {
-          memberships.set(normalizeId(userId), selected);
-        }
-      } catch {
-        // 그룹별 목록 API가 정상이라면 개별 조회 실패는 무시합니다.
-      }
-    });
-
-    for (const group of groups) {
-      if (!state.groups.some((item) => item.id === group.id)) {
-        state.groups.push(group);
-      }
-    }
-  }
-
-  async function loadFavoriteGroups(force = false) {
-    if (state.groupLoadPromise) {
-      return state.groupLoadPromise;
-    }
-    if (state.groupLoaded && !force) {
-      return;
-    }
-
-    state.groupLoading = true;
-    state.groupError = '';
-    refreshDashboard(state.activeRoot);
-
-    state.groupLoadPromise = (async () => {
-      try {
-        const groupPayload = await fetchJson('/api/favorite/group/list');
-        const groups = findArrayPayload(groupPayload)
-          .map(normalizeGroup)
-          .filter(Boolean)
-          .filter(
-            (group, index, list) =>
-              list.findIndex((candidate) => candidate.id === group.id) === index,
-          );
-
-        const memberships = new Map();
-        let assignmentCount = 0;
-        let successfulGroupRequests = 0;
-
-        await mapWithConcurrency(groups, 6, async (group) => {
-          try {
-            const payload = await fetchJson(
-              `/api/favorite/${encodeURIComponent(group.id)}`,
-            );
-            successfulGroupRequests += 1;
-            for (const item of findArrayPayload(payload)) {
-              const userId = normalizeId(getFavoriteId(item));
-              if (!userId) {
-                continue;
-              }
-              const current = memberships.get(userId) || [];
-              if (!current.includes(group.id)) {
-                current.push(group.id);
-                assignmentCount += 1;
-              }
-              memberships.set(userId, current);
-            }
-          } catch {
-            // 실패한 그룹은 아래의 개별 멤버십 조회로 보완합니다.
-          }
-        });
-
-        state.groups = groups;
-        if (groups.length > 0 && assignmentCount === 0) {
-          await loadMembershipsByFavorite(groups, memberships);
-        }
-
-        state.groupMemberships = memberships;
-        state.groupLoaded = true;
-        state.groupError =
-          groups.length > 0 && successfulGroupRequests === 0 && memberships.size === 0
-            ? '즐겨찾기 그룹의 스트리머 목록을 확인하지 못했습니다.'
-            : '';
-
-        if (
-          state.groupFilter !== 'all' &&
-          !groups.some((group) => group.id === state.groupFilter)
-        ) {
-          state.groupFilter = 'all';
-        }
-      } catch (error) {
-        state.groupLoaded = false;
-        state.groupError =
-          error?.message || '즐겨찾기 그룹을 불러오지 못했습니다.';
-      } finally {
-        state.groupLoading = false;
-        state.groupLoadPromise = null;
-        const root = state.activeRoot;
-        for (const row of getAllRows()) {
-          renderRowGroupBadges(row);
-        }
-        refreshDashboard(root);
-      }
-    })();
-
-    return state.groupLoadPromise;
-  }
-
-  function scheduleGroupRefreshes() {
-    for (const timer of state.groupRefreshTimers) {
-      clearTimeout(timer);
-    }
-    state.groupRefreshTimers = [2500, 10000].map((delay) =>
-      setTimeout(() => {
-        loadFavoriteGroups(true);
-      }, delay),
-    );
-  }
-
   async function runNativeMenuAction(row, action) {
     const menuButton = row.querySelector('button.more_dot');
     if (!menuButton) {
@@ -1489,9 +943,6 @@
     }
 
     actionButton.click();
-    if (action === 'group') {
-      scheduleGroupRefreshes();
-    }
   }
 
   function waitFor(getValue, timeout) {
@@ -1518,11 +969,6 @@
       return;
     }
 
-    root.classList.toggle(
-      `${PREFIX}-compact`,
-      state.density === 'compact',
-    );
-
     const list = root.querySelector('.my_adm_layer .strm_list');
     const toolbar = root.querySelector(`.${PREFIX}-toolbar`);
     const empty = root.querySelector(`.${PREFIX}-empty`);
@@ -1530,7 +976,6 @@
       return;
     }
 
-    renderGroupFilters(toolbar);
     const rows = [...list.children].filter((row) => row.tagName === 'LI');
     const counts = {
       all: rows.length,
@@ -1538,10 +983,6 @@
       pinned: 0,
       'alarm-on': 0,
     };
-    const groupCounts = new Map(
-      state.groups.map((group) => [String(group.id), 0]),
-    );
-
     for (const row of rows) {
       const flags = {
         live: row.classList.contains('live'),
@@ -1555,17 +996,9 @@
         }
       }
 
-      const rowGroups = getRowGroupIds(row).map(String);
-      for (const groupId of rowGroups) {
-        groupCounts.set(groupId, (groupCounts.get(groupId) || 0) + 1);
-      }
-
       const statusMatches =
         state.filter === 'all' || Boolean(flags[state.filter]);
-      const groupMatches =
-        state.groupFilter === 'all' ||
-        rowGroups.includes(state.groupFilter);
-      row.hidden = !statusMatches || !groupMatches;
+      row.hidden = !statusMatches;
     }
 
     setText(
@@ -1579,24 +1012,8 @@
       setText(button.querySelector('em'), String(counts[id] ?? 0));
     }
 
-    for (const button of toolbar.querySelectorAll(
-      'button[data-group-filter]',
-    )) {
-      const id = button.dataset.groupFilter;
-      button.setAttribute('aria-pressed', String(state.groupFilter === id));
-      setText(
-        button.querySelector('em'),
-        String(id === 'all' ? rows.length : groupCounts.get(id) || 0),
-      );
-    }
-
     const visibleCount = rows.filter((row) => !row.hidden).length;
-    const selectedGroup =
-      state.groupFilter === 'all'
-        ? null
-        : state.groups.find((group) => group.id === state.groupFilter);
     const summaryParts = [
-      selectedGroup?.title,
       `표시 ${visibleCount}명`,
       `LIVE ${counts.live}명`,
       `고정 ${counts.pinned}명`,
@@ -1605,18 +1022,6 @@
     setText(
       toolbar.querySelector(`.${PREFIX}-summary`),
       summaryParts.join(' · '),
-    );
-
-    const densityButton = toolbar.querySelector('[data-action="density"]');
-    setText(
-      densityButton,
-      state.density === 'compact' ? '↔ 여유 있게' : '↔ 촘촘하게',
-    );
-    densityButton?.setAttribute(
-      'aria-label',
-      state.density === 'compact'
-        ? '카드 간격을 여유 있게 변경'
-        : '카드 간격을 촘촘하게 변경',
     );
 
     const searchInput = root.querySelector('input#search-inp');

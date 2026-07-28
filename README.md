@@ -9,33 +9,31 @@ Tampermonkey 사용자 스크립트입니다. 별도의 웹 대시보드나 외�
 네이버 웨일에 Tampermonkey가 설치되어 있다면 아래 링크를 열고
 Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 
-- **[SOOP 즐겨찾기 관리 v1.4.0 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
+- **[SOOP 즐겨찾기 관리 v1.4.1 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
 
 > `.user.js` 파일을 Windows 탐색기에서 더블클릭하지 마세요. Windows Script
 > Host용 파일이 아니므로 `800A03EA` 오류가 발생합니다.
 
 ## 주요 기능
 
-- 각 스트리머 이름 옆에 소속 즐겨찾기 그룹 표시
-- `모든 그룹`과 실제 즐겨찾기 그룹 버튼을 이용한 즉시 필터링
-- 전체·LIVE·고정·알림 켜짐 상태 필터
+- 전체·LIVE·고정·알림 상태 필터
 - 알림 켜기·끄기, 즐겨찾기 해제, 그룹 설정, 상단 고정·해제
-- 넓은 카드형 화면과 카드 밀도 전환
+- 넓은 카드형 관리 화면
 - SOOP 다크 모드 및 반응형 화면 지원
 - 로그인 세션 안에서만 작동하며 외부 서버로 계정 정보 전송 없음
 
-구독 관리 기능과 `알림 꺼짐` 필터는 v1.4.0에서 제거했습니다.
+즐겨찾기 그룹 자동 조회, 구독 관리, `알림 꺼짐`, `고정 숨기기`,
+화면 밀도 전환 기능은 제거했습니다.
 
 ## 사용 방법
 
 1. `https://www.sooplive.com/my/favorite`를 새로고침합니다.
 2. 페이지 오른쪽 상단의 `★ 즐겨찾기 관리`를 누릅니다.
-3. 상단 그룹 버튼을 누르면 해당 그룹의 스트리머만 표시됩니다.
-4. 각 스트리머 카드의 설정 버튼을 사용합니다.
+3. 상단 상태 필터 또는 각 스트리머 카드의 설정 버튼을 사용합니다.
 
 ## 파일
 
-- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.4.0
+- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.4.1
 - `INSTALL.md`: 자세한 설치 및 사용 안내
 
 ## 주의
