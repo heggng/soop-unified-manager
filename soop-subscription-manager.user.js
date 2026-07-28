@@ -1,9 +1,13 @@
 // ==UserScript==
 // @name         SOOP 구독 한눈에 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.0.0
+// @version      1.1.0
 // @description  SOOP 구독 스트리머 관리 창과 구독·결제 내역 페이지를 검색 가능한 카드형 대시보드로 개선합니다.
 // @author       Codex
+// @homepageURL  https://github.com/heggng/soop-unified-manager
+// @supportURL   https://github.com/heggng/soop-unified-manager/issues
+// @updateURL    https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-subscription-manager.user.js
+// @downloadURL  https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-subscription-manager.user.js
 // @match        https://www.sooplive.com/my/subscribe*
 // @match        https://sooplive.com/my/subscribe*
 // @match        https://point.sooplive.com/Subscription/SubscriptionList.asp*
