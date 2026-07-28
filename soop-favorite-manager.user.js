@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         SOOP 즐겨찾기·구독 통합 관리
+// @name         SOOP 즐겨찾기 한눈에 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.3.0
-// @description  즐겨찾기 페이지에서 즐겨찾기와 구독 스트리머를 한 화면으로 관리하고 각종 설정을 바로 사용할 수 있게 합니다.
+// @version      1.4.0
+// @description  즐겨찾기 스트리머와 그룹을 한 화면에서 확인하고 알림·고정·그룹 설정을 빠르게 관리합니다.
 // @author       Codex
 // @homepageURL  https://github.com/heggng/soop-unified-manager
 // @supportURL   https://github.com/heggng/soop-unified-manager/issues
@@ -26,30 +26,21 @@
     { id: 'live', label: 'LIVE' },
     { id: 'pinned', label: '고정' },
     { id: 'alarm-on', label: '알림 켜짐' },
-    { id: 'alarm-off', label: '알림 꺼짐' },
-  ];
-  const SUBSCRIPTION_FILTERS = [
-    { id: 'all', label: '전체' },
-    { id: 'live', label: 'LIVE' },
-    { id: 'pinned', label: '고정' },
-    { id: 'favorite-on', label: '즐겨찾기' },
-    { id: 'favorite-off', label: '미즐겨찾기' },
   ];
 
   const state = {
-    view: 'favorite',
     filter: 'all',
-    subscriptionFilter: 'all',
+    groupFilter: 'all',
     density: readDensity(),
     activeRoot: null,
     scheduled: false,
-    subscriptions: [],
-    subscriptionLoading: false,
-    subscriptionLoaded: false,
-    subscriptionError: '',
-    subscriptionIframe: null,
-    subscriptionList: null,
-    subscriptionObserver: null,
+    groups: [],
+    groupMemberships: new Map(),
+    groupLoading: false,
+    groupLoaded: false,
+    groupError: '',
+    groupLoadPromise: null,
+    groupRefreshTimers: [],
   };
 
   const style = document.createElement('style');
@@ -100,17 +91,12 @@
         "Noto Sans KR", sans-serif;
       letter-spacing: -0.2px;
       cursor: pointer;
-      transition: transform 0.18s ease, box-shadow 0.18s ease,
-        opacity 0.18s ease;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
     }
 
     #${PREFIX}-fab:hover {
       transform: translateY(-2px);
       box-shadow: 0 14px 34px rgba(1, 130, 255, 0.44);
-    }
-
-    #${PREFIX}-fab:active {
-      transform: translateY(0);
     }
 
     #${PREFIX}-fab[hidden] {
@@ -141,46 +127,6 @@
     #${PREFIX}-toast.is-visible {
       transform: translate(-50%, 0);
       opacity: 1;
-    }
-
-    #${PREFIX}-sub-source {
-      display: none;
-    }
-
-    #${PREFIX}-sub-source.is-interacting {
-      position: fixed;
-      inset: 0;
-      z-index: 10060;
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      border: 0;
-      background: var(--soop-fm-bg);
-    }
-
-    #${PREFIX}-source-close {
-      position: fixed;
-      top: 14px;
-      left: 50%;
-      z-index: 10070;
-      display: none;
-      min-height: 40px;
-      padding: 0 16px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 999px;
-      background: #087cff;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-      color: #fff;
-      font: 700 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      transform: translateX(-50%);
-      cursor: pointer;
-    }
-
-    #${PREFIX}-source-close.is-visible {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
     }
 
     .layer_container.${PREFIX}-root {
@@ -220,93 +166,12 @@
       font-size: 14px !important;
     }
 
-    .${PREFIX}-modebar {
-      display: flex;
-      flex: 0 0 auto;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      margin: 0 28px 10px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--soop-fm-border);
-    }
-
-    .${PREFIX}-modes {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px;
-      border-radius: 12px;
-      background: var(--soop-fm-surface);
-    }
-
-    .${PREFIX}-modes button {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      height: 38px;
-      padding: 0 16px;
-      border: 1px solid transparent;
-      border-radius: 9px;
-      background: transparent;
-      color: var(--soop-fm-muted);
-      font: 700 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      cursor: pointer;
-    }
-
-    .${PREFIX}-modes button:hover {
-      color: var(--soop-fm-text);
-    }
-
-    .${PREFIX}-modes button[aria-pressed="true"] {
-      border-color: rgba(1, 130, 255, 0.3);
-      background: var(--soop-fm-card);
-      box-shadow: 0 2px 9px rgba(1, 130, 255, 0.11);
-      color: var(--soop-fm-accent);
-    }
-
-    .${PREFIX}-modes em {
-      min-width: 22px;
-      padding: 3px 6px;
-      border-radius: 999px;
-      background: rgba(117, 123, 138, 0.13);
-      font-size: 11px;
-      font-style: normal;
-      text-align: center;
-    }
-
-    .${PREFIX}-history-link {
-      display: inline-flex;
-      align-items: center;
-      min-height: 36px;
-      padding: 0 12px;
-      border: 1px solid var(--soop-fm-border);
-      border-radius: 9px;
-      background: var(--soop-fm-card);
-      color: var(--soop-fm-muted);
-      font: 650 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      text-decoration: none;
-      white-space: nowrap;
-    }
-
-    .${PREFIX}-history-link:hover {
-      border-color: rgba(1, 130, 255, 0.32);
-      color: var(--soop-fm-accent);
-    }
-
     .layer_container.${PREFIX}-root > .btn_close {
       top: 22px !important;
       right: 26px !important;
       width: 32px !important;
       height: 32px !important;
       border-radius: 50%;
-      transition: background-color 0.18s ease;
-    }
-
-    .layer_container.${PREFIX}-root > .btn_close:hover {
-      background-color: var(--soop-fm-surface) !important;
     }
 
     .layer_container.${PREFIX}-root .my_adm_layer {
@@ -328,20 +193,17 @@
     .layer_container.${PREFIX}-root
       .my_adm_layer
       .search_area
-      .form
       input[type="text"] {
       height: 44px !important;
       border: 1px solid var(--soop-fm-border) !important;
       background: var(--soop-fm-surface) !important;
       color: var(--soop-fm-text) !important;
       font-size: 15px !important;
-      transition: border-color 0.18s ease, box-shadow 0.18s ease;
     }
 
     .layer_container.${PREFIX}-root
       .my_adm_layer
       .search_area
-      .form
       input[type="text"]:focus {
       border-color: var(--soop-fm-accent) !important;
       box-shadow: 0 0 0 3px rgba(1, 130, 255, 0.13);
@@ -370,7 +232,7 @@
       display: flex;
       flex: 0 0 auto;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       min-height: 54px;
       margin: 0 28px 8px;
       padding: 8px 10px;
@@ -381,17 +243,26 @@
     }
 
     .${PREFIX}-filters,
-    .${PREFIX}-sub-filters {
+    .${PREFIX}-group-filters {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
     }
 
+    .${PREFIX}-group-filters {
+      flex: 1 1 300px;
+      overflow-x: auto;
+      min-width: 120px;
+      padding: 0 4px 2px 12px;
+      border-left: 1px solid var(--soop-fm-border);
+      scrollbar-width: thin;
+    }
+
     .${PREFIX}-filters button,
-    .${PREFIX}-sub-filters button,
+    .${PREFIX}-group-filters button,
     .${PREFIX}-density {
       display: inline-flex;
+      flex: 0 0 auto;
       align-items: center;
       justify-content: center;
       gap: 5px;
@@ -405,12 +276,10 @@
         "Noto Sans KR", sans-serif;
       white-space: nowrap;
       cursor: pointer;
-      transition: border-color 0.16s ease, background-color 0.16s ease,
-        color 0.16s ease;
     }
 
     .${PREFIX}-filters button:hover,
-    .${PREFIX}-sub-filters button:hover,
+    .${PREFIX}-group-filters button:hover,
     .${PREFIX}-density:hover {
       border-color: var(--soop-fm-border);
       background: var(--soop-fm-card);
@@ -418,7 +287,7 @@
     }
 
     .${PREFIX}-filters button[aria-pressed="true"],
-    .${PREFIX}-sub-filters button[aria-pressed="true"] {
+    .${PREFIX}-group-filters button[aria-pressed="true"] {
       border-color: rgba(1, 130, 255, 0.28);
       background: rgba(1, 130, 255, 0.12);
       color: var(--soop-fm-accent);
@@ -430,14 +299,8 @@
       color: var(--soop-fm-live);
     }
 
-    .${PREFIX}-sub-filters button[data-sub-filter="live"][aria-pressed="true"] {
-      border-color: rgba(255, 64, 87, 0.25);
-      background: rgba(255, 64, 87, 0.11);
-      color: var(--soop-fm-live);
-    }
-
     .${PREFIX}-filters button em,
-    .${PREFIX}-sub-filters button em {
+    .${PREFIX}-group-filters button em {
       min-width: 18px;
       padding: 2px 5px;
       border-radius: 999px;
@@ -447,22 +310,18 @@
       text-align: center;
     }
 
-    .${PREFIX}-sub-filters {
-      display: none;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .${PREFIX}-filters {
-      display: none;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .${PREFIX}-sub-filters {
-      display: flex;
+    .${PREFIX}-group-message {
+      align-self: center;
+      padding: 0 10px;
+      color: var(--soop-fm-muted);
+      font: 550 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans KR", sans-serif;
+      white-space: nowrap;
     }
 
     .${PREFIX}-summary {
       overflow: hidden;
+      flex: 0 1 auto;
       margin-left: auto;
       color: var(--soop-fm-muted);
       font: 500 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -472,7 +331,6 @@
     }
 
     .${PREFIX}-density {
-      flex: 0 0 auto;
       border-color: var(--soop-fm-border);
       background: var(--soop-fm-card);
     }
@@ -498,23 +356,6 @@
       box-sizing: border-box;
       overscroll-behavior: contain;
       scrollbar-gutter: stable;
-    }
-
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list::-webkit-scrollbar {
-      width: 11px;
-    }
-
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list::-webkit-scrollbar-thumb {
-      border: 3px solid transparent;
-      border-radius: 999px;
-      background: rgba(117, 123, 138, 0.52) !important;
-      background-clip: padding-box !important;
     }
 
     .layer_container.${PREFIX}-root
@@ -587,10 +428,58 @@
       .strm_list
       > li
       .nick_wrap
+      .nick {
+      display: flex !important;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .layer_container.${PREFIX}-root
+      .my_adm_layer
+      .strm_area
+      .strm_list
+      > li
+      .nick_wrap
       .nick
       span:first-child {
+      overflow: hidden;
+      min-width: 0;
       max-width: none !important;
       white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .${PREFIX}-group-badges {
+      display: inline-flex;
+      flex: 0 1 auto;
+      align-items: center;
+      gap: 4px;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .${PREFIX}-group-badge {
+      display: inline-flex;
+      flex: 0 1 auto;
+      overflow: hidden;
+      max-width: 92px;
+      padding: 3px 7px;
+      border: 1px solid rgba(1, 130, 255, 0.22);
+      border-radius: 999px;
+      background: rgba(1, 130, 255, 0.1);
+      color: var(--soop-fm-accent);
+      font: 650 10.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans KR", sans-serif;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .${PREFIX}-group-badge.is-ungrouped {
+      border-color: var(--soop-fm-border);
+      background: var(--soop-fm-surface);
+      color: var(--soop-fm-muted);
     }
 
     .layer_container.${PREFIX}-root
@@ -669,45 +558,21 @@
       white-space: nowrap;
     }
 
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list
-      > li
-      .util_btn_wrap
-      button.alarm_on::after {
+    .layer_container.${PREFIX}-root .util_btn_wrap button.alarm_on::after {
       content: "알림 켜짐";
       color: var(--soop-fm-accent);
     }
 
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list
-      > li
-      .util_btn_wrap
-      button.alarm_off::after {
+    .layer_container.${PREFIX}-root .util_btn_wrap button.alarm_off::after {
       content: "알림 꺼짐";
     }
 
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list
-      > li
-      .util_btn_wrap
-      button.fav_on::after {
+    .layer_container.${PREFIX}-root .util_btn_wrap button.fav_on::after {
       content: "즐겨찾기 해제";
       color: #e45062;
     }
 
-    .layer_container.${PREFIX}-root
-      .my_adm_layer
-      .strm_area
-      .strm_list
-      > li
-      .util_btn_wrap
-      button.fav_off::after {
+    .layer_container.${PREFIX}-root .util_btn_wrap button.fav_off::after {
       content: "즐겨찾기 추가";
     }
 
@@ -749,8 +614,6 @@
       font: 650 10.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
         "Noto Sans KR", sans-serif;
       cursor: pointer;
-      transition: border-color 0.16s ease, background-color 0.16s ease,
-        color 0.16s ease;
     }
 
     .${PREFIX}-quick button:hover {
@@ -774,235 +637,17 @@
       line-height: 19px;
     }
 
-    .${PREFIX}-sub-panel {
-      display: none;
-      flex: 1 1 auto;
-      overflow: auto;
-      min-height: 0;
-      padding: 4px 28px 26px;
-      box-sizing: border-box;
-      overscroll-behavior: contain;
-      scrollbar-gutter: stable;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .${PREFIX}-sub-panel {
-      display: block;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .my_adm_layer
-      .strm_area
-      > .total_wrap,
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .my_adm_layer
-      .strm_area
-      > .strm_list,
-    .layer_container.${PREFIX}-root.${PREFIX}-view-subscription
-      .my_adm_layer
-      .strm_area
-      > .${PREFIX}-empty {
-      display: none !important;
-    }
-
-    .${PREFIX}-sub-panel::-webkit-scrollbar {
-      width: 11px;
-    }
-
-    .${PREFIX}-sub-panel::-webkit-scrollbar-thumb {
-      border: 3px solid transparent;
-      border-radius: 999px;
-      background: rgba(117, 123, 138, 0.52);
-      background-clip: padding-box;
-    }
-
-    .${PREFIX}-sub-status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 220px;
-      padding: 28px;
-      border: 1px dashed var(--soop-fm-border);
-      border-radius: 13px;
-      color: var(--soop-fm-muted);
-      font: 600 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      text-align: center;
-    }
-
-    .${PREFIX}-sub-status a {
-      color: var(--soop-fm-accent);
-    }
-
-    .${PREFIX}-sub-grid {
-      display: grid;
-      grid-template-columns: repeat(
-        auto-fill,
-        minmax(min(430px, 100%), 1fr)
-      );
-      align-content: start;
-      gap: 10px;
-    }
-
-    .${PREFIX}-sub-card {
-      display: grid;
-      grid-template-areas:
-        "avatar info"
-        "avatar actions";
-      grid-template-columns: 66px minmax(0, 1fr);
-      grid-template-rows: minmax(38px, auto) minmax(44px, auto);
-      align-items: center;
-      overflow: hidden;
-      min-height: 94px;
-      padding: 8px 11px;
-      border: 1px solid var(--soop-fm-border);
-      border-radius: 13px;
-      background: var(--soop-fm-card);
-      box-sizing: border-box;
-      transition: border-color 0.16s ease, background-color 0.16s ease,
-        box-shadow 0.16s ease, transform 0.16s ease;
-    }
-
-    .${PREFIX}-sub-card:hover {
-      border-color: rgba(1, 130, 255, 0.32);
-      background: var(--soop-fm-surface-hover);
-      box-shadow: 0 6px 18px rgba(1, 130, 255, 0.09);
-      transform: translateY(-1px);
-    }
-
-    .${PREFIX}-sub-avatar {
-      position: relative;
-      display: flex;
-      grid-area: avatar;
-      align-items: center;
-      justify-content: center;
-      align-self: center;
-      width: 58px;
-      height: 58px;
-      border-radius: 50%;
-      background: var(--soop-fm-surface);
-      color: var(--soop-fm-muted);
-      font: 750 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      object-fit: cover;
-    }
-
-    .${PREFIX}-sub-avatar.is-live {
-      padding: 2px;
-      border: 2px solid var(--soop-fm-live);
-      background: var(--soop-fm-card);
-    }
-
-    .${PREFIX}-sub-info {
-      grid-area: info;
-      overflow: hidden;
-      min-width: 0;
-      padding: 0 4px;
-    }
-
-    .${PREFIX}-sub-name-line {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      overflow: hidden;
-    }
-
-    .${PREFIX}-sub-name {
-      overflow: hidden;
-      color: var(--soop-fm-text);
-      font: 750 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      text-decoration: none;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .${PREFIX}-sub-badge {
-      flex: 0 0 auto;
-      padding: 2px 5px;
-      border-radius: 5px;
-      background: rgba(1, 130, 255, 0.13);
-      color: var(--soop-fm-accent);
-      font: 700 10px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-    }
-
-    .${PREFIX}-sub-detail {
-      display: block;
-      overflow: hidden;
-      margin-top: 4px;
-      color: var(--soop-fm-muted);
-      font: 500 12px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .${PREFIX}-sub-actions {
-      display: grid;
-      grid-area: actions;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 4px;
-      min-width: 0;
-    }
-
-    .${PREFIX}-sub-actions button {
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
-      overflow: hidden;
-      height: 42px;
-      padding: 0 2px;
-      border: 1px solid transparent;
-      border-radius: 9px;
-      background: transparent;
-      color: var(--soop-fm-muted);
-      font: 650 10.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI",
-        "Noto Sans KR", sans-serif;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-
-    .${PREFIX}-sub-actions button:hover {
-      border-color: var(--soop-fm-border);
-      background: var(--soop-fm-surface);
-      color: var(--soop-fm-text);
-    }
-
-    .${PREFIX}-sub-actions button:disabled {
-      opacity: 0.5;
-      cursor: wait;
-    }
-
-    .${PREFIX}-sub-actions button.is-active {
-      color: var(--soop-fm-accent);
-    }
-
-    .${PREFIX}-sub-actions button.is-favorite {
-      color: #e45062;
-    }
-
-    .${PREFIX}-sub-action-icon {
-      height: 19px;
-      font-size: 17px;
-      line-height: 19px;
-    }
-
     .${PREFIX}-empty {
       display: none;
       flex: 1 1 auto;
       align-items: center;
       justify-content: center;
-      min-height: 180px;
       margin: 4px 28px 26px;
       border: 1px dashed var(--soop-fm-border);
       border-radius: 13px;
       color: var(--soop-fm-muted);
       font: 600 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI",
         "Noto Sans KR", sans-serif;
-      text-align: center;
     }
 
     .${PREFIX}-empty.is-visible {
@@ -1013,7 +658,6 @@
       .my_adm_layer
       .strm_area
       .strm_list {
-      grid-auto-rows: minmax(80px, auto);
       gap: 7px !important;
     }
 
@@ -1028,8 +672,6 @@
     }
 
     .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .my_adm_layer
-      .strm_area
       .strm_list
       > li
       .thumb
@@ -1039,50 +681,31 @@
     }
 
     .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .my_adm_layer
-      .strm_area
       .strm_list
       > li
       .thumb
-      a
       img {
       width: 48px !important;
       height: 48px !important;
     }
 
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .${PREFIX}-sub-grid {
-      gap: 7px;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .${PREFIX}-sub-card {
-      min-height: 80px;
-      padding-top: 4px;
-      padding-bottom: 4px;
-    }
-
-    .layer_container.${PREFIX}-root.${PREFIX}-compact
-      .${PREFIX}-sub-avatar {
-      width: 50px;
-      height: 50px;
-    }
-
-    @media (max-width: 980px) {
-      .layer_container.${PREFIX}-root {
-        width: calc(100vw - 20px) !important;
-        height: calc(100vh - 20px) !important;
-      }
-
+    @media (max-width: 1100px) {
       .${PREFIX}-toolbar {
         align-items: flex-start;
         flex-wrap: wrap;
       }
 
-      .${PREFIX}-summary {
+      .${PREFIX}-group-filters {
         order: 3;
-        width: 100%;
-        margin-left: 4px;
+        flex: 1 1 100%;
+        padding-top: 7px;
+        padding-left: 0;
+        border-top: 1px solid var(--soop-fm-border);
+        border-left: 0;
+      }
+
+      .${PREFIX}-summary {
+        margin-left: auto;
       }
     }
 
@@ -1090,7 +713,6 @@
       #${PREFIX}-fab {
         top: 94px;
         right: 14px;
-        bottom: auto;
         min-height: 42px;
         padding: 0 13px;
       }
@@ -1113,27 +735,6 @@
         right: 14px !important;
       }
 
-      .${PREFIX}-modebar {
-        align-items: flex-start;
-        margin: 0 14px 8px;
-        padding-bottom: 8px;
-      }
-
-      .${PREFIX}-modes {
-        overflow-x: auto;
-        max-width: 100%;
-      }
-
-      .${PREFIX}-modes button {
-        flex: 0 0 auto;
-        height: 36px;
-        padding: 0 12px;
-      }
-
-      .${PREFIX}-history-link {
-        display: none;
-      }
-
       .layer_container.${PREFIX}-root .my_adm_layer .search_area {
         padding: 0 14px 8px !important;
       }
@@ -1152,16 +753,9 @@
       }
 
       .${PREFIX}-filters,
-      .${PREFIX}-sub-filters {
+      .${PREFIX}-group-filters {
         flex: 1 1 100%;
-        flex-wrap: nowrap;
         overflow-x: auto;
-        padding-bottom: 2px;
-      }
-
-      .${PREFIX}-filters button,
-      .${PREFIX}-sub-filters button {
-        flex: 0 0 auto;
       }
 
       .${PREFIX}-summary {
@@ -1173,18 +767,6 @@
         .strm_area
         .strm_list {
         padding: 2px 14px 18px !important;
-      }
-
-      .${PREFIX}-sub-panel {
-        padding: 2px 14px 18px;
-      }
-
-      .${PREFIX}-sub-actions {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .${PREFIX}-sub-card {
-        grid-template-rows: minmax(38px, auto) minmax(84px, auto);
       }
     }
   `;
@@ -1207,6 +789,20 @@
     }
   }
 
+  function normalize(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeId(value) {
+    return normalize(value).toLocaleLowerCase('en-US');
+  }
+
+  function setText(element, value) {
+    if (element && element.textContent !== value) {
+      element.textContent = value;
+    }
+  }
+
   function isVisible(element) {
     return Boolean(
       element &&
@@ -1219,7 +815,7 @@
   function findNativeManagerButton() {
     return [...document.querySelectorAll('button.fav_manage')].find(
       (button) =>
-        isVisible(button) && button.textContent.trim().includes('스트리머 관리'),
+        isVisible(button) && normalize(button.textContent).includes('스트리머 관리'),
     );
   }
 
@@ -1232,8 +828,7 @@
       return;
     }
 
-    nativeButton.title = '즐겨찾기와 구독 스트리머를 한 화면에서 관리합니다.';
-
+    nativeButton.title = '즐겨찾기 스트리머를 한 화면에서 관리합니다.';
     if (fab) {
       return;
     }
@@ -1242,8 +837,8 @@
     fab.id = `${PREFIX}-fab`;
     fab.type = 'button';
     fab.innerHTML =
-      '<span aria-hidden="true">★</span><span>즐겨찾기·구독 관리</span>';
-    fab.setAttribute('aria-label', '즐겨찾기와 구독 통합 관리 창 열기');
+      '<span aria-hidden="true">★</span><span>즐겨찾기 관리</span>';
+    fab.setAttribute('aria-label', '즐겨찾기 관리 창 열기');
     fab.addEventListener('click', () => {
       const target = findNativeManagerButton();
       if (!target) {
@@ -1252,7 +847,6 @@
         );
         return;
       }
-
       target.click();
     });
     document.body.append(fab);
@@ -1262,79 +856,80 @@
     return [...document.querySelectorAll('.layer_container')].filter((root) => {
       const title = root.querySelector(':scope > h3');
       return Boolean(
-        title?.textContent.includes('스트리머 관리') &&
+        normalize(title?.textContent).includes('스트리머 관리') &&
           root.querySelector('.my_adm_layer .strm_area .strm_list') &&
           root.querySelector('input#search-inp'),
       );
     });
   }
 
-  function createModebar() {
-    const modebar = document.createElement('div');
-    modebar.className = `${PREFIX}-modebar`;
-
-    const modes = document.createElement('div');
-    modes.className = `${PREFIX}-modes`;
-    modes.setAttribute('role', 'tablist');
-    modes.setAttribute('aria-label', '관리할 스트리머 종류');
-
-    for (const view of [
-      { id: 'favorite', icon: '★', label: '즐겨찾기' },
-      { id: 'subscription', icon: '◆', label: '구독' },
-    ]) {
+  function appendFilterButtons(container) {
+    for (const filter of FILTERS) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.dataset.view = view.id;
-      button.setAttribute('role', 'tab');
-      button.setAttribute('aria-pressed', String(state.view === view.id));
-      button.innerHTML = `
-        <span aria-hidden="true">${view.icon}</span>
-        <span>${view.label}</span>
-        <em>0</em>
-      `;
-      modes.append(button);
-    }
-
-    const history = document.createElement('a');
-    history.className = `${PREFIX}-history-link`;
-    history.href =
-      'https://point.sooplive.com/Subscription/SubscriptionList.asp';
-    history.target = '_blank';
-    history.rel = 'noopener';
-    history.textContent = '구독·결제 내역 ↗';
-
-    modebar.append(modes, history);
-    modebar.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-view]');
-      if (!button || button.dataset.view === state.view) {
-        return;
-      }
-
-      state.view = button.dataset.view;
-      refreshDashboard(state.activeRoot);
-
-      if (state.view === 'subscription') {
-        loadSubscriptions();
-      }
-    });
-
-    return modebar;
-  }
-
-  function appendFilterButtons(container, filters, dataKey, activeFilter) {
-    for (const filter of filters) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.dataset[dataKey] = filter.id;
-      button.setAttribute('aria-pressed', String(activeFilter === filter.id));
+      button.dataset.filter = filter.id;
+      button.setAttribute('aria-pressed', String(state.filter === filter.id));
 
       const label = document.createElement('span');
       label.textContent = filter.label;
       const count = document.createElement('em');
       count.textContent = '0';
-
       button.append(label, count);
       container.append(button);
+    }
+  }
+
+  function renderGroupFilters(toolbar) {
+    const container = toolbar?.querySelector(`.${PREFIX}-group-filters`);
+    if (!container) {
+      return;
+    }
+
+    const signature = JSON.stringify({
+      loading: state.groupLoading,
+      loaded: state.groupLoaded,
+      error: state.groupError,
+      groups: state.groups.map((group) => [group.id, group.title]),
+    });
+    if (container.dataset.renderKey === signature) {
+      return;
+    }
+
+    container.dataset.renderKey = signature;
+    container.replaceChildren();
+
+    if (state.groupLoading && !state.groupLoaded) {
+      const loading = document.createElement('span');
+      loading.className = `${PREFIX}-group-message`;
+      loading.textContent = '그룹 불러오는 중…';
+      container.append(loading);
+      return;
+    }
+
+    const filters = [{ id: 'all', title: '모든 그룹' }, ...state.groups];
+    for (const group of filters) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.groupFilter = String(group.id);
+      button.setAttribute(
+        'aria-pressed',
+        String(state.groupFilter === String(group.id)),
+      );
+
+      const label = document.createElement('span');
+      label.textContent = group.title;
+      const count = document.createElement('em');
+      count.textContent = '0';
+      button.append(label, count);
+      container.append(button);
+    }
+
+    if (state.groupError) {
+      const error = document.createElement('span');
+      error.className = `${PREFIX}-group-message`;
+      error.textContent = '그룹을 불러오지 못했습니다.';
+      error.title = state.groupError;
+      container.append(error);
     }
   }
 
@@ -1346,19 +941,12 @@
     filters.className = `${PREFIX}-filters`;
     filters.setAttribute('role', 'group');
     filters.setAttribute('aria-label', '스트리머 빠른 필터');
+    appendFilterButtons(filters);
 
-    appendFilterButtons(filters, FILTERS, 'filter', state.filter);
-
-    const subscriptionFilters = document.createElement('div');
-    subscriptionFilters.className = `${PREFIX}-sub-filters`;
-    subscriptionFilters.setAttribute('role', 'group');
-    subscriptionFilters.setAttribute('aria-label', '구독 스트리머 빠른 필터');
-    appendFilterButtons(
-      subscriptionFilters,
-      SUBSCRIPTION_FILTERS,
-      'subFilter',
-      state.subscriptionFilter,
-    );
+    const groupFilters = document.createElement('div');
+    groupFilters.className = `${PREFIX}-group-filters`;
+    groupFilters.setAttribute('role', 'group');
+    groupFilters.setAttribute('aria-label', '즐겨찾기 그룹 필터');
 
     const summary = document.createElement('div');
     summary.className = `${PREFIX}-summary`;
@@ -1369,7 +957,9 @@
     density.className = `${PREFIX}-density`;
     density.dataset.action = 'density';
 
-    toolbar.append(filters, subscriptionFilters, summary, density);
+    toolbar.append(filters, groupFilters, summary, density);
+    renderGroupFilters(toolbar);
+
     toolbar.addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button) {
@@ -1382,8 +972,8 @@
         return;
       }
 
-      if (button.dataset.subFilter) {
-        state.subscriptionFilter = button.dataset.subFilter;
+      if (button.dataset.groupFilter) {
+        state.groupFilter = button.dataset.groupFilter;
         refreshDashboard(state.activeRoot);
         return;
       }
@@ -1406,20 +996,107 @@
     return empty;
   }
 
+  function getRowUserId(row) {
+    if (row.dataset.soopFmUserId) {
+      return row.dataset.soopFmUserId;
+    }
+
+    const links = row.querySelectorAll(
+      '.nick[href], .thumb a[href], a[href*="/station/"]',
+    );
+    for (const link of links) {
+      try {
+        const url = new URL(link.getAttribute('href'), location.origin);
+        const queryId =
+          url.searchParams.get('bjid') ||
+          url.searchParams.get('user_id') ||
+          url.searchParams.get('userId');
+        const parts = url.pathname.split('/').filter(Boolean);
+        const pathId = parts.at(-1);
+        const candidate = decodeURIComponent(queryId || pathId || '');
+        if (
+          candidate &&
+          !['favorite', 'my', 'station'].includes(normalizeId(candidate))
+        ) {
+          row.dataset.soopFmUserId = candidate;
+          return candidate;
+        }
+      } catch {
+        // 다음 링크 후보를 확인합니다.
+      }
+    }
+
+    const dataId =
+      row.dataset.userId ||
+      row.getAttribute('data-user-id') ||
+      row.querySelector('[data-user-id]')?.getAttribute('data-user-id');
+    if (dataId) {
+      row.dataset.soopFmUserId = dataId;
+      return dataId;
+    }
+    return '';
+  }
+
+  function getRowGroupIds(row) {
+    const userId = normalizeId(getRowUserId(row));
+    return state.groupMemberships.get(userId) || [];
+  }
+
+  function renderRowGroupBadges(row) {
+    const nick = row.querySelector('.nick_wrap .nick');
+    if (!nick) {
+      return;
+    }
+
+    let badges = nick.querySelector(`:scope > .${PREFIX}-group-badges`);
+    if (!badges) {
+      badges = document.createElement('span');
+      badges.className = `${PREFIX}-group-badges`;
+      nick.append(badges);
+    }
+
+    if (!state.groupLoaded) {
+      badges.replaceChildren();
+      badges.removeAttribute('title');
+      return;
+    }
+
+    const membership = new Set(getRowGroupIds(row).map(String));
+    const groups = state.groups.filter((group) =>
+      membership.has(String(group.id)),
+    );
+    const signature = JSON.stringify(groups.map((group) => group.id));
+    if (badges.dataset.renderKey === signature) {
+      return;
+    }
+
+    badges.dataset.renderKey = signature;
+    badges.replaceChildren();
+    badges.title = groups.length
+      ? `즐겨찾기 그룹: ${groups.map((group) => group.title).join(', ')}`
+      : '즐겨찾기 그룹: 미분류';
+
+    if (groups.length === 0) {
+      const badge = document.createElement('span');
+      badge.className = `${PREFIX}-group-badge is-ungrouped`;
+      badge.textContent = '미분류';
+      badges.append(badge);
+      return;
+    }
+
+    for (const group of groups) {
+      const badge = document.createElement('span');
+      badge.className = `${PREFIX}-group-badge`;
+      badge.textContent = group.title;
+      badges.append(badge);
+    }
+  }
+
   function enhanceRoot(root) {
     state.activeRoot = root;
     root.classList.add(`${PREFIX}-root`);
     root.setAttribute('role', 'dialog');
-    root.setAttribute('aria-label', 'SOOP 즐겨찾기와 구독 스트리머 통합 관리');
-
-    let modebar = root.querySelector(`:scope > .${PREFIX}-modebar`);
-    if (!modebar) {
-      modebar = createModebar();
-      root.querySelector(':scope > h3')?.insertAdjacentElement(
-        'afterend',
-        modebar,
-      );
-    }
+    root.setAttribute('aria-label', 'SOOP 즐겨찾기 스트리머 관리');
 
     const area = root.querySelector('.my_adm_layer .strm_area');
     const list = area?.querySelector(':scope > .strm_list');
@@ -1439,27 +1116,6 @@
       list.insertAdjacentElement('afterend', empty);
     }
 
-    let subscriptionPanel = area.querySelector(
-      `:scope > .${PREFIX}-sub-panel`,
-    );
-    if (!subscriptionPanel) {
-      subscriptionPanel = document.createElement('div');
-      subscriptionPanel.className = `${PREFIX}-sub-panel`;
-      subscriptionPanel.setAttribute('role', 'tabpanel');
-      subscriptionPanel.setAttribute('aria-label', '구독 스트리머');
-      area.append(subscriptionPanel);
-    }
-
-    const searchInput = root.querySelector('input#search-inp');
-    if (searchInput && !searchInput.dataset.soopFmUnifiedListener) {
-      searchInput.dataset.soopFmUnifiedListener = 'true';
-      searchInput.addEventListener('input', () => {
-        if (state.view === 'subscription') {
-          renderSubscriptions(root);
-        }
-      });
-    }
-
     for (const row of [...list.children]) {
       if (row.tagName === 'LI') {
         enhanceRow(row);
@@ -1467,11 +1123,13 @@
     }
 
     refreshDashboard(root);
-    loadSubscriptions();
+    loadFavoriteGroups();
   }
 
   function enhanceRow(row) {
     row.classList.add(`${PREFIX}-card`);
+    getRowUserId(row);
+    renderRowGroupBadges(row);
 
     const alarmButton = row.querySelector(
       '.util_btn_wrap button.alarm_on, .util_btn_wrap button.alarm_off',
@@ -1486,7 +1144,9 @@
         'aria-label',
         isOn ? '방송 알림 끄기' : '방송 알림 켜기',
       );
-      alarmButton.title = isOn ? '알림 켜짐 — 클릭하여 끄기' : '알림 꺼짐 — 클릭하여 켜기';
+      alarmButton.title = isOn
+        ? '알림 켜짐 — 클릭하여 끄기'
+        : '알림 꺼짐 — 클릭하여 켜기';
     }
 
     if (favoriteButton) {
@@ -1505,8 +1165,7 @@
       row.addEventListener('click', (event) => {
         if (
           event.target.closest(
-            '.util_btn_wrap button, .select_box_item button, .' +
-              `${PREFIX}-quick button`,
+            `.util_btn_wrap button, .select_box_item button, .${PREFIX}-quick button`,
           )
         ) {
           setTimeout(scheduleEnhance, 80);
@@ -1539,7 +1198,6 @@
         event.preventDefault();
         event.stopPropagation();
         button.disabled = true;
-
         try {
           await runNativeMenuAction(row, button.dataset.action);
         } finally {
@@ -1568,497 +1226,233 @@
     setText(pinLabel, isPinned ? '고정 해제' : '상단 고정');
   }
 
-  function getSubscriptionSourceUrl() {
-    const override =
-      document.documentElement.dataset.soopFmSubscribeUrl?.trim();
-    return new URL(override || '/my/subscribe', location.origin).href;
+  async function fetchJson(path) {
+    const response = await fetch(path, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new Error(`그룹 API 요청 실패 (${response.status})`);
+    }
+    return response.json();
   }
 
-  function findSubscriptionSourceList(sourceDocument) {
-    return [...sourceDocument.querySelectorAll('.layer_container')]
-      .filter((root) =>
-        normalize(root.querySelector(':scope > h3')?.textContent).includes(
-          '스트리머 관리',
-        ),
-      )
-      .map((root) =>
-        root.querySelector('.my_adm_layer .strm_area > .strm_list'),
-      )
-      .find(Boolean);
-  }
-
-  function loadSubscriptions() {
-    if (
-      state.subscriptionLoading ||
-      state.subscriptionLoaded ||
-      state.subscriptionIframe
-    ) {
-      return;
+  function findArrayPayload(payload, depth = 0) {
+    if (Array.isArray(payload)) {
+      return payload.flat(Infinity);
+    }
+    if (!payload || typeof payload !== 'object' || depth > 4) {
+      return [];
     }
 
-    state.subscriptionLoading = true;
-    state.subscriptionError = '';
-    refreshDashboard(state.activeRoot);
-
-    const iframe = document.createElement('iframe');
-    iframe.id = `${PREFIX}-sub-source`;
-    iframe.title = 'SOOP 구독 관리 원본 기능';
-    iframe.setAttribute('aria-hidden', 'true');
-    state.subscriptionIframe = iframe;
-
-    iframe.addEventListener(
-      'load',
-      () => {
-        initializeSubscriptionSource(iframe);
-      },
-      { once: true },
-    );
-    iframe.src = getSubscriptionSourceUrl();
-    document.body.append(iframe);
-  }
-
-  async function initializeSubscriptionSource(iframe) {
-    try {
-      const sourceDocument = iframe.contentDocument;
-      if (!sourceDocument) {
-        throw new Error('구독 페이지 문서에 접근할 수 없습니다.');
-      }
-
-      let list = findSubscriptionSourceList(sourceDocument);
-      if (!list) {
-        const managerButton = await waitFor(
-          () => sourceDocument.querySelector('button.fav_manage'),
-          15000,
-        );
-        if (!managerButton) {
-          throw new Error(
-            '구독 페이지의 스트리머 관리 버튼을 찾지 못했습니다.',
-          );
+    for (const key of ['data', 'result', 'list', 'items', 'favorites']) {
+      if (key in payload) {
+        const found = findArrayPayload(payload[key], depth + 1);
+        if (found.length > 0 || Array.isArray(payload[key])) {
+          return found;
         }
-        managerButton.click();
-        list = await waitFor(
-          () => findSubscriptionSourceList(sourceDocument),
-          15000,
-        );
       }
+    }
 
-      if (!list) {
-        throw new Error('구독 스트리머 목록을 불러오지 못했습니다.');
+    for (const value of Object.values(payload)) {
+      const found = findArrayPayload(value, depth + 1);
+      if (found.length > 0) {
+        return found;
       }
-
-      state.subscriptionList = list;
-      state.subscriptionLoading = false;
-      state.subscriptionLoaded = true;
-      state.subscriptionError = '';
-      syncSubscriptions();
-
-      state.subscriptionObserver?.disconnect();
-      state.subscriptionObserver = new iframe.contentWindow.MutationObserver(
-        scheduleSubscriptionSync,
-      );
-      state.subscriptionObserver.observe(sourceDocument.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'src'],
-      });
-    } catch (error) {
-      state.subscriptionLoading = false;
-      state.subscriptionLoaded = false;
-      state.subscriptionError =
-        error?.message || '구독 정보를 불러오지 못했습니다.';
-      refreshDashboard(state.activeRoot);
     }
+    return [];
   }
 
-  function scheduleSubscriptionSync() {
-    clearTimeout(state.subscriptionSyncTimer);
-    state.subscriptionSyncTimer = setTimeout(syncSubscriptions, 160);
-  }
-
-  function readSubscriptions(list) {
-    return [...list.children]
-      .filter((row) => row.tagName === 'LI')
-      .map((row, index) => {
-        const nickLink = row.querySelector('.nick');
-        const nickname =
-          normalize(
-            row.querySelector('.nick span:first-child')?.textContent,
-          ) ||
-          normalize(nickLink?.textContent) ||
-          `구독 스트리머 ${index + 1}`;
-        const href = nickLink?.href || nickLink?.getAttribute('href') || '';
-        const userId = (() => {
-          try {
-            const url = new URL(href, location.origin);
-            return (
-              url.searchParams.get('bjid') ||
-              url.pathname.split('/').filter(Boolean).at(-1) ||
-              ''
-            );
-          } catch {
-            return '';
-          }
-        })();
-        const avatarNode = row.querySelector('.thumb img');
-        const tier =
-          normalize(
-            row.querySelector('.subscribe_tier .months')?.textContent,
-          ) ||
-          normalize(
-            row.querySelector('.subscribe_tier')?.textContent,
-          );
-        const subscriptionNickname = (
-          normalize(
-            row.querySelector('.subscribe_nick em')?.textContent,
-          ) ||
-          normalize(
-            row.querySelector('.subscribe_nick')?.textContent,
-          )
-        ).replace(/^구독\s*닉네임\s*:?\s*/u, '');
-        const lastLive = normalize(
-          row.querySelector('.last_live')?.textContent,
-        );
-
-        return {
-          key: href || `${nickname}:${index}`,
-          nickname,
-          href,
-          userId,
-          avatar: avatarNode?.currentSrc || avatarNode?.src || '',
-          tier,
-          subscriptionNickname,
-          lastLive,
-          live: row.classList.contains('live'),
-          pinned: Boolean(row.querySelector('.thumb > .pin')),
-          favorite: Boolean(row.querySelector('.util_btn_wrap .fav_on')),
-          sourceRow: row,
-        };
-      });
-  }
-
-  function syncSubscriptions() {
-    try {
-      const sourceDocument = state.subscriptionIframe?.contentDocument;
-      const list =
-        (sourceDocument && findSubscriptionSourceList(sourceDocument)) ||
-        state.subscriptionList;
-      if (!list) {
-        return;
-      }
-
-      state.subscriptionList = list;
-      state.subscriptions = readSubscriptions(list);
-      state.subscriptionLoaded = true;
-      state.subscriptionLoading = false;
-      state.subscriptionError = '';
-      refreshDashboard(state.activeRoot);
-    } catch {
-      state.subscriptionError =
-        '구독 페이지 연결이 끊어졌습니다. 구독 페이지를 직접 열어 확인해 주세요.';
-      refreshDashboard(state.activeRoot);
+  function normalizeGroup(item) {
+    if (!item || typeof item !== 'object') {
+      return null;
     }
+    const id =
+      item.idx ??
+      item.groupIdx ??
+      item.group_idx ??
+      item.favoriteGroupIdx ??
+      item.id;
+    const title = normalize(
+      item.title ??
+        item.groupTitle ??
+        item.group_title ??
+        item.groupName ??
+        item.name,
+    );
+    if (id === undefined || id === null || !title) {
+      return null;
+    }
+    return { id: String(id), title };
   }
 
-  function getSubscriptionFlags(item) {
-    return {
-      live: item.live,
-      pinned: item.pinned,
-      'favorite-on': item.favorite,
-      'favorite-off': !item.favorite,
-    };
+  function getFavoriteId(item) {
+    if (!item || typeof item !== 'object') {
+      return '';
+    }
+    return normalize(
+      item.userId ??
+        item.user_id ??
+        item.favoriteId ??
+        item.favorite_id ??
+        item.bjId ??
+        item.bj_id ??
+        item.streamerId ??
+        item.streamer_id ??
+        item.user?.id ??
+        item.streamer?.id,
+    );
   }
 
-  function createSubscriptionCard(item) {
-    const card = document.createElement('article');
-    card.className = `${PREFIX}-sub-card`;
+  function getAllRows() {
+    const root = state.activeRoot;
+    const list = root?.querySelector('.my_adm_layer .strm_area .strm_list');
+    return list
+      ? [...list.children].filter((row) => row.tagName === 'LI')
+      : [];
+  }
 
-    let avatar;
-    if (item.avatar) {
-      avatar = document.createElement('img');
-      avatar.src = item.avatar;
-      avatar.alt = '';
-      avatar.loading = 'lazy';
-    } else {
-      avatar = document.createElement('span');
-      avatar.textContent = item.nickname.slice(0, 2);
-      avatar.setAttribute('aria-hidden', 'true');
-    }
-    avatar.className = `${PREFIX}-sub-avatar${item.live ? ' is-live' : ''}`;
-
-    const info = document.createElement('div');
-    info.className = `${PREFIX}-sub-info`;
-    const nameLine = document.createElement('div');
-    nameLine.className = `${PREFIX}-sub-name-line`;
-    const name = document.createElement(item.href ? 'a' : 'span');
-    name.className = `${PREFIX}-sub-name`;
-    name.textContent = item.nickname;
-    if (item.href) {
-      name.href = item.href;
-      name.target = '_blank';
-      name.rel = 'noopener';
-    }
-    nameLine.append(name);
-
-    const badge = document.createElement('span');
-    badge.className = `${PREFIX}-sub-badge`;
-    badge.textContent = item.live ? 'LIVE' : item.tier || '구독 중';
-    nameLine.append(badge);
-
-    const detail = document.createElement('span');
-    detail.className = `${PREFIX}-sub-detail`;
-    detail.textContent =
-      [
-        item.subscriptionNickname &&
-          `구독 닉네임 ${item.subscriptionNickname}`,
-        item.tier,
-        item.lastLive,
-      ]
-        .filter(Boolean)
-        .join(' · ') || (item.userId ? `ID ${item.userId}` : '구독 중');
-    info.append(nameLine, detail);
-
-    const actions = document.createElement('div');
-    actions.className = `${PREFIX}-sub-actions`;
-    const actionSpecs = [
-      {
-        id: 'favorite',
-        icon: item.favorite ? '★' : '☆',
-        label: item.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가',
-        className: item.favorite ? 'is-favorite' : '',
+  async function mapWithConcurrency(items, limit, worker) {
+    let index = 0;
+    const runners = Array.from(
+      { length: Math.min(limit, items.length) },
+      async () => {
+        while (index < items.length) {
+          const current = items[index];
+          index += 1;
+          await worker(current);
+        }
       },
-      { id: 'nickname', icon: '✎', label: '구독 닉네임' },
-      { id: 'payment', icon: '▤', label: '결제 정보' },
-      {
-        id: 'pin',
-        icon: '◆',
-        label: item.pinned ? '고정 해제' : '상단 고정',
-        className: item.pinned ? 'is-active' : '',
-      },
+    );
+    await Promise.all(runners);
+  }
+
+  async function loadMembershipsByFavorite(groups, memberships) {
+    const userIds = [
+      ...new Set(getAllRows().map(getRowUserId).filter(Boolean)),
     ];
 
-    for (const spec of actionSpecs) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.dataset.action = spec.id;
-      button.className = spec.className;
-      button.setAttribute('aria-label', `${item.nickname} ${spec.label}`);
-      button.innerHTML = `
-        <span class="${PREFIX}-sub-action-icon" aria-hidden="true">${spec.icon}</span>
-        <span>${spec.label}</span>
-      `;
-      button.addEventListener('click', async () => {
-        if (button.disabled) {
-          return;
+    await mapWithConcurrency(userIds, 6, async (userId) => {
+      try {
+        const payload = await fetchJson(
+          `/api/favorite/group/list?favorite_id=${encodeURIComponent(userId)}`,
+        );
+        const selected = findArrayPayload(payload)
+          .filter((item) => item?.already === true)
+          .map(normalizeGroup)
+          .filter(Boolean)
+          .map((group) => String(group.id));
+        if (selected.length > 0) {
+          memberships.set(normalizeId(userId), selected);
         }
-        button.disabled = true;
-        try {
-          await runSubscriptionAction(item, spec.id);
-        } finally {
-          setTimeout(() => {
-            button.disabled = false;
-            scheduleSubscriptionSync();
-          }, 350);
-        }
-      });
-      actions.append(button);
-    }
-
-    card.append(avatar, info, actions);
-    return card;
-  }
-
-  function renderSubscriptions(root) {
-    const panel = root?.querySelector(`.${PREFIX}-sub-panel`);
-    if (!panel) {
-      return;
-    }
-
-    const query = normalize(
-      root.querySelector('input#search-inp')?.value,
-    ).toLocaleLowerCase('ko');
-    const signature = JSON.stringify({
-      loading: state.subscriptionLoading,
-      loaded: state.subscriptionLoaded,
-      error: state.subscriptionError,
-      filter: state.subscriptionFilter,
-      query,
-      items: state.subscriptions.map((item) => [
-        item.key,
-        item.nickname,
-        item.avatar,
-        item.tier,
-        item.subscriptionNickname,
-        item.lastLive,
-        item.live,
-        item.pinned,
-        item.favorite,
-      ]),
-    });
-    if (panel.dataset.renderKey === signature) {
-      return;
-    }
-    panel.dataset.renderKey = signature;
-    panel.replaceChildren();
-
-    if (state.subscriptionLoading) {
-      const status = document.createElement('div');
-      status.className = `${PREFIX}-sub-status`;
-      status.textContent = '구독 스트리머 정보를 불러오는 중입니다…';
-      panel.append(status);
-      return;
-    }
-
-    if (state.subscriptionError) {
-      const status = document.createElement('div');
-      status.className = `${PREFIX}-sub-status`;
-      const message = document.createElement('span');
-      message.textContent = `${state.subscriptionError} `;
-      const link = document.createElement('a');
-      link.href = 'https://www.sooplive.com/my/subscribe';
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.textContent = '구독 페이지 열기 ↗';
-      status.append(message, link);
-      panel.append(status);
-      return;
-    }
-
-    const visibleItems = state.subscriptions.filter((item) => {
-      const flags = getSubscriptionFlags(item);
-      const filterMatches =
-        state.subscriptionFilter === 'all' ||
-        Boolean(flags[state.subscriptionFilter]);
-      const searchable = [
-        item.nickname,
-        item.userId,
-        item.tier,
-        item.subscriptionNickname,
-      ]
-        .join(' ')
-        .toLocaleLowerCase('ko');
-      return filterMatches && (!query || searchable.includes(query));
+      } catch {
+        // 그룹별 목록 API가 정상이라면 개별 조회 실패는 무시합니다.
+      }
     });
 
-    if (visibleItems.length === 0) {
-      const status = document.createElement('div');
-      status.className = `${PREFIX}-sub-status`;
-      status.textContent = state.subscriptions.length
-        ? '검색 또는 선택한 조건에 맞는 구독 스트리머가 없습니다.'
-        : '현재 구독 중인 스트리머가 없습니다.';
-      panel.append(status);
-      return;
-    }
-
-    const grid = document.createElement('div');
-    grid.className = `${PREFIX}-sub-grid`;
-    for (const item of visibleItems) {
-      grid.append(createSubscriptionCard(item));
-    }
-    panel.append(grid);
-  }
-
-  function ensureSourceCloseButton() {
-    let close = document.getElementById(`${PREFIX}-source-close`);
-    if (close) {
-      return close;
-    }
-    close = document.createElement('button');
-    close.id = `${PREFIX}-source-close`;
-    close.type = 'button';
-    close.textContent = '← 설정을 마치고 통합 관리로 돌아가기';
-    close.addEventListener('click', hideSubscriptionSource);
-    document.body.append(close);
-    return close;
-  }
-
-  function showSubscriptionSource() {
-    const iframe = state.subscriptionIframe;
-    if (!iframe) {
-      return;
-    }
-    iframe.classList.add('is-interacting');
-    iframe.setAttribute('aria-hidden', 'false');
-    ensureSourceCloseButton().classList.add('is-visible');
-  }
-
-  function hideSubscriptionSource() {
-    state.subscriptionIframe?.classList.remove('is-interacting');
-    state.subscriptionIframe?.setAttribute('aria-hidden', 'true');
-    document
-      .getElementById(`${PREFIX}-source-close`)
-      ?.classList.remove('is-visible');
-    scheduleSubscriptionSync();
-  }
-
-  async function runSubscriptionAction(item, action) {
-    const row = item.sourceRow;
-    if (!row?.isConnected) {
-      showToast('구독 정보가 갱신되었습니다. 잠시 후 다시 시도해 주세요.');
-      syncSubscriptions();
-      return;
-    }
-
-    if (action === 'favorite') {
-      const favoriteButton = row.querySelector(
-        '.util_btn_wrap button.fav_on, .util_btn_wrap button.fav_off',
-      );
-      if (!favoriteButton) {
-        showToast('즐겨찾기 설정 버튼을 찾지 못했습니다.');
-        return;
+    for (const group of groups) {
+      if (!state.groups.some((item) => item.id === group.id)) {
+        state.groups.push(group);
       }
-      favoriteButton.click();
-      showToast(
-        item.favorite
-          ? `${item.nickname} 즐겨찾기를 해제했습니다.`
-          : `${item.nickname}을(를) 즐겨찾기에 추가했습니다.`,
-      );
-      return;
     }
-
-    await runSubscriptionMenuAction(row, action);
   }
 
-  async function runSubscriptionMenuAction(row, action) {
-    const menuButton = row.querySelector('button.more_dot');
-    if (!menuButton) {
-      showToast('이 스트리머의 구독 설정 메뉴를 찾지 못했습니다.');
+  async function loadFavoriteGroups(force = false) {
+    if (state.groupLoadPromise) {
+      return state.groupLoadPromise;
+    }
+    if (state.groupLoaded && !force) {
       return;
     }
 
-    const labels = {
-      nickname: ['구독 닉네임 변경'],
-      payment: ['구독 결제정보'],
-      pin: ['고정 해제하기', '고정하기'],
-    }[action];
-    const needsVisibleSource = action === 'nickname' || action === 'payment';
-    if (needsVisibleSource) {
-      showSubscriptionSource();
-      row.scrollIntoView({ block: 'center' });
-    }
+    state.groupLoading = true;
+    state.groupError = '';
+    refreshDashboard(state.activeRoot);
 
-    menuButton.click();
-    const actionButton = await waitFor(() => {
-      return [...row.querySelectorAll('.select_list button')].find((button) =>
-        labels.some((label) =>
-          normalize(button.textContent).includes(label),
-        ),
-      );
-    }, 1600);
+    state.groupLoadPromise = (async () => {
+      try {
+        const groupPayload = await fetchJson('/api/favorite/group/list');
+        const groups = findArrayPayload(groupPayload)
+          .map(normalizeGroup)
+          .filter(Boolean)
+          .filter(
+            (group, index, list) =>
+              list.findIndex((candidate) => candidate.id === group.id) === index,
+          );
 
-    if (!actionButton) {
-      menuButton.click();
-      if (needsVisibleSource) {
-        hideSubscriptionSource();
+        const memberships = new Map();
+        let assignmentCount = 0;
+        let successfulGroupRequests = 0;
+
+        await mapWithConcurrency(groups, 6, async (group) => {
+          try {
+            const payload = await fetchJson(
+              `/api/favorite/${encodeURIComponent(group.id)}`,
+            );
+            successfulGroupRequests += 1;
+            for (const item of findArrayPayload(payload)) {
+              const userId = normalizeId(getFavoriteId(item));
+              if (!userId) {
+                continue;
+              }
+              const current = memberships.get(userId) || [];
+              if (!current.includes(group.id)) {
+                current.push(group.id);
+                assignmentCount += 1;
+              }
+              memberships.set(userId, current);
+            }
+          } catch {
+            // 실패한 그룹은 아래의 개별 멤버십 조회로 보완합니다.
+          }
+        });
+
+        state.groups = groups;
+        if (groups.length > 0 && assignmentCount === 0) {
+          await loadMembershipsByFavorite(groups, memberships);
+        }
+
+        state.groupMemberships = memberships;
+        state.groupLoaded = true;
+        state.groupError =
+          groups.length > 0 && successfulGroupRequests === 0 && memberships.size === 0
+            ? '즐겨찾기 그룹의 스트리머 목록을 확인하지 못했습니다.'
+            : '';
+
+        if (
+          state.groupFilter !== 'all' &&
+          !groups.some((group) => group.id === state.groupFilter)
+        ) {
+          state.groupFilter = 'all';
+        }
+      } catch (error) {
+        state.groupLoaded = false;
+        state.groupError =
+          error?.message || '즐겨찾기 그룹을 불러오지 못했습니다.';
+      } finally {
+        state.groupLoading = false;
+        state.groupLoadPromise = null;
+        const root = state.activeRoot;
+        for (const row of getAllRows()) {
+          renderRowGroupBadges(row);
+        }
+        refreshDashboard(root);
       }
-      showToast('요청한 구독 설정 메뉴를 찾지 못했습니다.');
-      return;
-    }
+    })();
 
-    actionButton.click();
-    if (action === 'pin') {
-      showToast('구독 스트리머 고정 설정을 변경했습니다.');
+    return state.groupLoadPromise;
+  }
+
+  function scheduleGroupRefreshes() {
+    for (const timer of state.groupRefreshTimers) {
+      clearTimeout(timer);
     }
+    state.groupRefreshTimers = [2500, 10000].map((delay) =>
+      setTimeout(() => {
+        loadFavoriteGroups(true);
+      }, delay),
+    );
   }
 
   async function runNativeMenuAction(row, action) {
@@ -2071,7 +1465,6 @@
     }
 
     menuButton.click();
-
     const targetLabels =
       action === 'group'
         ? ['즐겨찾기 그룹에 담기']
@@ -2080,7 +1473,7 @@
     const actionButton = await waitFor(() => {
       return [...row.querySelectorAll('.select_list button')].find((button) =>
         targetLabels.some((label) =>
-          button.textContent.replace(/\s+/g, ' ').trim().includes(label),
+          normalize(button.textContent).includes(label),
         ),
       );
     }, 1400);
@@ -2096,11 +1489,13 @@
     }
 
     actionButton.click();
+    if (action === 'group') {
+      scheduleGroupRefreshes();
+    }
   }
 
   function waitFor(getValue, timeout) {
     const startedAt = Date.now();
-
     return new Promise((resolve) => {
       const check = () => {
         const value = getValue();
@@ -2108,15 +1503,12 @@
           resolve(value);
           return;
         }
-
         if (Date.now() - startedAt >= timeout) {
           resolve(null);
           return;
         }
-
         requestAnimationFrame(check);
       };
-
       check();
     });
   }
@@ -2126,14 +1518,9 @@
       return;
     }
 
-    const isSubscriptionView = state.view === 'subscription';
     root.classList.toggle(
       `${PREFIX}-compact`,
       state.density === 'compact',
-    );
-    root.classList.toggle(
-      `${PREFIX}-view-subscription`,
-      isSubscriptionView,
     );
 
     const list = root.querySelector('.my_adm_layer .strm_list');
@@ -2143,21 +1530,23 @@
       return;
     }
 
+    renderGroupFilters(toolbar);
     const rows = [...list.children].filter((row) => row.tagName === 'LI');
     const counts = {
       all: rows.length,
       live: 0,
       pinned: 0,
       'alarm-on': 0,
-      'alarm-off': 0,
     };
+    const groupCounts = new Map(
+      state.groups.map((group) => [String(group.id), 0]),
+    );
 
     for (const row of rows) {
       const flags = {
         live: row.classList.contains('live'),
         pinned: Boolean(row.querySelector('.thumb > .pin')),
         'alarm-on': Boolean(row.querySelector('.util_btn_wrap .alarm_on')),
-        'alarm-off': Boolean(row.querySelector('.util_btn_wrap .alarm_off')),
       };
 
       for (const key of Object.keys(flags)) {
@@ -2166,31 +1555,22 @@
         }
       }
 
-      row.hidden =
-        state.filter !== 'all' && !Boolean(flags[state.filter]);
-    }
+      const rowGroups = getRowGroupIds(row).map(String);
+      for (const groupId of rowGroups) {
+        groupCounts.set(groupId, (groupCounts.get(groupId) || 0) + 1);
+      }
 
-    const modebar = root.querySelector(`.${PREFIX}-modebar`);
-    for (const button of modebar?.querySelectorAll('button[data-view]') || []) {
-      const isActive = button.dataset.view === state.view;
-      button.setAttribute('aria-pressed', String(isActive));
-      button.setAttribute('aria-selected', String(isActive));
-      const count =
-        button.dataset.view === 'favorite'
-          ? rows.length
-          : state.subscriptionLoading && !state.subscriptionLoaded
-            ? '…'
-            : state.subscriptions.length;
-      setText(button.querySelector('em'), String(count));
+      const statusMatches =
+        state.filter === 'all' || Boolean(flags[state.filter]);
+      const groupMatches =
+        state.groupFilter === 'all' ||
+        rowGroups.includes(state.groupFilter);
+      row.hidden = !statusMatches || !groupMatches;
     }
 
     setText(
       root.querySelector(':scope > h3 .total_txt'),
-      isSubscriptionView
-        ? state.subscriptionLoading && !state.subscriptionLoaded
-          ? '(구독 불러오는 중)'
-          : `(구독 ${state.subscriptions.length}명)`
-        : `(${rows.length}명)`,
+      `(${rows.length}명)`,
     );
 
     for (const button of toolbar.querySelectorAll('button[data-filter]')) {
@@ -2199,69 +1579,33 @@
       setText(button.querySelector('em'), String(counts[id] ?? 0));
     }
 
-    const subscriptionCounts = {
-      all: state.subscriptions.length,
-      live: 0,
-      pinned: 0,
-      'favorite-on': 0,
-      'favorite-off': 0,
-    };
-    for (const item of state.subscriptions) {
-      const flags = getSubscriptionFlags(item);
-      for (const key of Object.keys(flags)) {
-        if (flags[key]) {
-          subscriptionCounts[key] += 1;
-        }
-      }
-    }
     for (const button of toolbar.querySelectorAll(
-      'button[data-sub-filter]',
+      'button[data-group-filter]',
     )) {
-      const id = button.dataset.subFilter;
-      button.setAttribute(
-        'aria-pressed',
-        String(state.subscriptionFilter === id),
+      const id = button.dataset.groupFilter;
+      button.setAttribute('aria-pressed', String(state.groupFilter === id));
+      setText(
+        button.querySelector('em'),
+        String(id === 'all' ? rows.length : groupCounts.get(id) || 0),
       );
-      setText(button.querySelector('em'), String(subscriptionCounts[id] ?? 0));
     }
 
-    const favoriteVisibleCount = rows.filter((row) => !row.hidden).length;
-    const query = normalize(
-      root.querySelector('input#search-inp')?.value,
-    ).toLocaleLowerCase('ko');
-    const subscriptionVisibleCount = state.subscriptions.filter((item) => {
-      const flags = getSubscriptionFlags(item);
-      const filterMatches =
-        state.subscriptionFilter === 'all' ||
-        Boolean(flags[state.subscriptionFilter]);
-      const searchable = [
-        item.nickname,
-        item.userId,
-        item.tier,
-        item.subscriptionNickname,
-      ]
-        .join(' ')
-        .toLocaleLowerCase('ko');
-      return filterMatches && (!query || searchable.includes(query));
-    }).length;
-
-    const summary = toolbar.querySelector(`.${PREFIX}-summary`);
-    const summaryText = isSubscriptionView
-      ? state.subscriptionLoading
-        ? '구독 정보를 불러오는 중…'
-        : [
-            `표시 ${subscriptionVisibleCount}명`,
-            `LIVE ${subscriptionCounts.live}명`,
-            `고정 ${subscriptionCounts.pinned}명`,
-            `즐겨찾기 ${subscriptionCounts['favorite-on']}명`,
-          ].join(' · ')
-      : [
-          `표시 ${favoriteVisibleCount}명`,
-          `LIVE ${counts.live}명`,
-          `고정 ${counts.pinned}명`,
-          `알림 ${counts['alarm-on']}명`,
-        ].join(' · ');
-    setText(summary, summaryText);
+    const visibleCount = rows.filter((row) => !row.hidden).length;
+    const selectedGroup =
+      state.groupFilter === 'all'
+        ? null
+        : state.groups.find((group) => group.id === state.groupFilter);
+    const summaryParts = [
+      selectedGroup?.title,
+      `표시 ${visibleCount}명`,
+      `LIVE ${counts.live}명`,
+      `고정 ${counts.pinned}명`,
+      `알림 ${counts['alarm-on']}명`,
+    ].filter(Boolean);
+    setText(
+      toolbar.querySelector(`.${PREFIX}-summary`),
+      summaryParts.join(' · '),
+    );
 
     const densityButton = toolbar.querySelector('[data-action="density"]');
     setText(
@@ -2277,35 +1621,14 @@
 
     const searchInput = root.querySelector('input#search-inp');
     if (searchInput) {
-      searchInput.placeholder = isSubscriptionView
-        ? '구독 스트리머를 검색해 주세요.'
-        : '즐겨찾기 스트리머를 검색해 주세요.';
+      searchInput.placeholder = '즐겨찾기 스트리머를 검색해 주세요.';
     }
 
     empty.classList.toggle(
       'is-visible',
-      !isSubscriptionView &&
-        rows.length > 0 &&
-        favoriteVisibleCount === 0,
+      rows.length > 0 && visibleCount === 0,
     );
-    list.hidden =
-      !isSubscriptionView &&
-      rows.length > 0 &&
-      favoriteVisibleCount === 0;
-
-    if (isSubscriptionView) {
-      renderSubscriptions(root);
-    }
-  }
-
-  function normalize(value) {
-    return String(value ?? '').replace(/\s+/g, ' ').trim();
-  }
-
-  function setText(element, value) {
-    if (element && element.textContent !== value) {
-      element.textContent = value;
-    }
+    list.hidden = rows.length > 0 && visibleCount === 0;
   }
 
   let toastTimer;
@@ -2360,13 +1683,11 @@
     }
 
     scheduleEnhance();
-
     const observer = new MutationObserver(scheduleEnhance);
     observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
-
     window.addEventListener('popstate', scheduleEnhance);
   }
 
