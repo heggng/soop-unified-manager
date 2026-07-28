@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP 즐겨찾기 한눈에 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.5.0
+// @version      1.5.1
 // @description  즐겨찾기 스트리머를 한 화면에서 확인하고 상태·그룹별로 빠르게 관리합니다.
 // @author       Codex
 // @homepageURL  https://github.com/heggng/soop-unified-manager
@@ -20,6 +20,7 @@
   'use strict';
 
   const PREFIX = 'soop-fm';
+  const FAVORITE_API_BASE = 'https://myapi.sooplive.com';
   const FILTERS = [
     { id: 'all', label: '전체' },
     { id: 'live', label: 'LIVE' },
@@ -1117,7 +1118,10 @@
       let groups = readGroupsFromPage();
       if (groups.length === 0) {
         try {
-          const payload = await fetchJson('/api/favorite/group/list', 5000);
+          const payload = await fetchJson(
+            `${FAVORITE_API_BASE}/api/favorite/group/list`,
+            5000,
+          );
           groups = findArrayPayload(payload)
             .map(normalizeGroup)
             .filter(Boolean);
@@ -1205,7 +1209,7 @@
 
     const request = (async () => {
       const payload = await fetchJson(
-        `/api/favorite/${encodeURIComponent(groupId)}`,
+        `${FAVORITE_API_BASE}/api/favorite/${encodeURIComponent(groupId)}`,
         6000,
       );
       const members = new Set(

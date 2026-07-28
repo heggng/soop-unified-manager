@@ -9,7 +9,7 @@ Tampermonkey 사용자 스크립트입니다. 별도의 웹 대시보드나 외�
 네이버 웨일에 Tampermonkey가 설치되어 있다면 아래 링크를 열고
 Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 
-- **[SOOP 즐겨찾기 관리 v1.5.0 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
+- **[SOOP 즐겨찾기 관리 v1.5.1 설치](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)**
 
 > `.user.js` 파일을 Windows 탐색기에서 더블클릭하지 마세요. Windows Script
 > Host용 파일이 아니므로 `800A03EA` 오류가 발생합니다.
@@ -34,7 +34,7 @@ Tampermonkey의 `설치` 또는 `업데이트`를 누르세요.
 
 ## 파일
 
-- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.5.0
+- `soop-favorite-manager.user.js`: 즐겨찾기 관리 v1.5.1
 - `INSTALL.md`: 자세한 설치 및 사용 안내
 
 ## 주의

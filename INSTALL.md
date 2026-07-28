@@ -5,10 +5,10 @@
 1. 네이버 웨일에서 Tampermonkey 대시보드를 엽니다.
 2. 기존 `SOOP 즐겨찾기·구독 통합 관리` 또는
    `SOOP 즐겨찾기 한눈에 관리`의 편집 버튼을 누릅니다.
-3. [v1.5.0 스크립트 원본](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)을 엽니다.
+3. [v1.5.1 스크립트 원본](https://raw.githubusercontent.com/heggng/soop-unified-manager/main/soop-favorite-manager.user.js)을 엽니다.
 4. Tampermonkey가 표시한 설치 화면에서 `업데이트`를 누릅니다.
 5. Tampermonkey 목록에서 이름이 `SOOP 즐겨찾기 한눈에 관리`, 버전이
-   `1.5.0`인지 확인합니다.
+   `1.5.1`인지 확인합니다.
 6. SOOP 즐겨찾기 페이지를 새로고침합니다.
 
 설치 화면이 자동으로 열리지 않으면 원본 전체를 복사해 Tampermonkey
