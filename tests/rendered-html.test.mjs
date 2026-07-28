@@ -22,15 +22,21 @@ async function render() {
   );
 }
 
-test("renders the SOOP unified manager landing page", async () => {
+test("renders the SOOP unified manager dashboard", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>SOOP 즐겨찾기·구독 통합 관리<\/title>/);
-  assert.match(html, /한 화면이면 충분합니다/);
-  assert.match(html, /soop-favorite-manager\.user\.js/);
+  assert.match(
+    html,
+    /<title>SOOP Unified — 즐겨찾기·구독 웹 관리<\/title>/,
+  );
+  assert.match(html, /SOOP에 연결해 관리를 시작하세요/);
+  assert.match(html, /즐겨찾기 관리/);
+  assert.match(html, /즐겨찾기와 구독 목록을 불러옵니다/);
+  assert.match(html, /SOOP 연결하고 목록 불러오기/);
   assert.match(html, /GitHub/);
+  assert.doesNotMatch(html, /통합 스크립트 설치/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SOOP 즐겨찾기·구독 통합 관리
 // @namespace    https://www.sooplive.com/
-// @version      1.1.0
-// @description  즐겨찾기 페이지에서 즐겨찾기와 구독 스트리머를 한 화면으로 관리하고 각종 설정을 바로 사용할 수 있게 합니다.
+// @version      1.2.0
+// @description  즐겨찾기·구독 통합 관리와 SOOP Unified 웹 대시보드의 안전한 로컬 연결을 제공합니다.
 // @author       Codex
 // @match        https://www.sooplive.com/my/favorite*
 // @match        https://sooplive.com/my/favorite*
@@ -17,6 +17,12 @@
 
   const PREFIX = 'soop-fm';
   const STORAGE_KEY = `${PREFIX}:density`;
+  const BRIDGE_CHANNEL = 'soop-unified-manager-bridge';
+  const BRIDGE_VERSION = '1.2.0';
+  const BRIDGE_ORIGINS = new Set([
+    'https://soop-unified-manager.vercel.app',
+    'http://localhost:3000',
+  ]);
   const FILTERS = [
     { id: 'all', label: '전체' },
     { id: 'live', label: 'LIVE' },
@@ -2323,6 +2329,317 @@
     }, 2800);
   }
 
+  function delay(milliseconds) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
+  }
+
+  function getFavoriteRowIdentity(row, index = 0) {
+    const nickLink = row.querySelector('.nick');
+    const nickname =
+      normalize(
+        row.querySelector('.nick span:first-child')?.textContent,
+      ) ||
+      normalize(nickLink?.textContent) ||
+      `즐겨찾기 스트리머 ${index + 1}`;
+    const href = nickLink?.href || nickLink?.getAttribute('href') || '';
+    return {
+      key: href || `${nickname}:${index}`,
+      nickname,
+      href,
+    };
+  }
+
+  function serializeFavoriteRows(root) {
+    const list = root?.querySelector('.my_adm_layer .strm_area > .strm_list');
+    if (!list) {
+      return [];
+    }
+
+    return [...list.children]
+      .filter((row) => row.tagName === 'LI')
+      .map((row, index) => {
+        const identity = getFavoriteRowIdentity(row, index);
+        const avatarNode = row.querySelector('.thumb img');
+        return {
+          ...identity,
+          avatar: avatarNode?.currentSrc || avatarNode?.src || '',
+          lastLive: normalize(
+            row.querySelector('.last_live')?.textContent,
+          ),
+          live: row.classList.contains('live'),
+          pinned: Boolean(row.querySelector('.thumb > .pin')),
+          alarm: Boolean(row.querySelector('.util_btn_wrap .alarm_on')),
+          favorite: Boolean(row.querySelector('.util_btn_wrap .fav_on')),
+        };
+      });
+  }
+
+  function serializeSubscriptionItems() {
+    return state.subscriptions.map((item) => ({
+      key: item.key,
+      nickname: item.nickname,
+      href: item.href,
+      userId: item.userId,
+      avatar: item.avatar,
+      tier: item.tier,
+      subscriptionNickname: item.subscriptionNickname,
+      lastLive: item.lastLive,
+      live: item.live,
+      pinned: item.pinned,
+      favorite: item.favorite,
+    }));
+  }
+
+  async function ensureBridgeManagerRoot() {
+    let root = findManagerRoots()[0];
+    if (!root) {
+      const managerButton = await waitFor(findNativeManagerButton, 12000);
+      if (!managerButton) {
+        throw new Error(
+          'SOOP 즐겨찾기 페이지의 스트리머 관리 버튼을 찾지 못했습니다.',
+        );
+      }
+      managerButton.click();
+      root = await waitFor(() => findManagerRoots()[0], 12000);
+    }
+
+    if (!root) {
+      throw new Error('SOOP 스트리머 관리 창을 열지 못했습니다.');
+    }
+
+    enhanceRoot(root);
+    state.filter = 'all';
+    state.subscriptionFilter = 'all';
+
+    const searchInput = root.querySelector('input#search-inp');
+    if (searchInput?.value) {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(searchInput, '');
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await delay(180);
+    }
+
+    return root;
+  }
+
+  async function ensureBridgeSubscriptions() {
+    loadSubscriptions();
+    await waitFor(
+      () =>
+        state.subscriptionLoaded ||
+        Boolean(state.subscriptionError),
+      16000,
+    );
+    if (state.subscriptionList) {
+      syncSubscriptions();
+    }
+  }
+
+  async function buildBridgeSnapshot() {
+    const root = await ensureBridgeManagerRoot();
+    await ensureBridgeSubscriptions();
+    const favorites = serializeFavoriteRows(root);
+    const subscriptions = serializeSubscriptionItems();
+
+    return {
+      version: BRIDGE_VERSION,
+      generatedAt: new Date().toISOString(),
+      favorites,
+      subscriptions,
+      favoriteCount: favorites.length,
+      subscriptionCount: subscriptions.length,
+      subscriptionError: state.subscriptionError || '',
+    };
+  }
+
+  function findFavoriteRowByKey(root, key) {
+    const rows = [
+      ...(root?.querySelectorAll(
+        '.my_adm_layer .strm_area > .strm_list > li',
+      ) || []),
+    ];
+    return rows.find(
+      (row, index) => getFavoriteRowIdentity(row, index).key === key,
+    );
+  }
+
+  async function runBridgeFavoriteAction(root, key, action) {
+    const row = findFavoriteRowByKey(root, key);
+    if (!row) {
+      throw new Error('즐겨찾기 스트리머를 찾지 못했습니다. 새로고침해 주세요.');
+    }
+
+    if (action === 'alarm') {
+      const button = row.querySelector(
+        '.util_btn_wrap button.alarm_on, .util_btn_wrap button.alarm_off',
+      );
+      if (!button) {
+        throw new Error('알림 설정 버튼을 찾지 못했습니다.');
+      }
+      button.click();
+      return { interactionRequired: false };
+    }
+
+    if (action === 'favorite') {
+      const button = row.querySelector(
+        '.util_btn_wrap button.fav_on, .util_btn_wrap button.fav_off',
+      );
+      if (!button) {
+        throw new Error('즐겨찾기 설정 버튼을 찾지 못했습니다.');
+      }
+      button.click();
+      return { interactionRequired: false };
+    }
+
+    if (action === 'pin' || action === 'group') {
+      await runNativeMenuAction(row, action);
+      if (action === 'group') {
+        window.focus();
+      }
+      return { interactionRequired: action === 'group' };
+    }
+
+    throw new Error('지원하지 않는 즐겨찾기 설정입니다.');
+  }
+
+  async function runBridgeSubscriptionAction(key, action) {
+    await ensureBridgeSubscriptions();
+    const item = state.subscriptions.find(
+      (subscription) => subscription.key === key,
+    );
+    if (!item) {
+      throw new Error('구독 스트리머를 찾지 못했습니다. 새로고침해 주세요.');
+    }
+
+    if (!['favorite', 'pin', 'nickname', 'payment'].includes(action)) {
+      throw new Error('지원하지 않는 구독 설정입니다.');
+    }
+
+    await runSubscriptionAction(item, action);
+    const interactionRequired =
+      action === 'nickname' || action === 'payment';
+    if (interactionRequired) {
+      window.focus();
+    }
+    return { interactionRequired };
+  }
+
+  async function runBridgeAction(payload) {
+    const scope = payload?.scope;
+    const key = String(payload?.key || '');
+    const action = String(payload?.action || '');
+    if (!key || !action) {
+      throw new Error('설정 요청 정보가 올바르지 않습니다.');
+    }
+
+    const root = await ensureBridgeManagerRoot();
+    const result =
+      scope === 'favorite'
+        ? await runBridgeFavoriteAction(root, key, action)
+        : scope === 'subscription'
+          ? await runBridgeSubscriptionAction(key, action)
+          : (() => {
+              throw new Error('지원하지 않는 목록입니다.');
+            })();
+
+    await delay(result.interactionRequired ? 220 : 780);
+    scheduleEnhance();
+    if (state.subscriptionList) {
+      syncSubscriptions();
+    }
+    return {
+      ...result,
+      snapshot: await buildBridgeSnapshot(),
+    };
+  }
+
+  function postBridgeMessage(target, origin, message) {
+    if (target && typeof target.postMessage === 'function') {
+      target.postMessage(
+        {
+          channel: BRIDGE_CHANNEL,
+          ...message,
+        },
+        origin,
+      );
+    }
+  }
+
+  async function handleBridgeMessage(event) {
+    if (
+      !BRIDGE_ORIGINS.has(event.origin) ||
+      event.source !== window.opener ||
+      event.data?.channel !== BRIDGE_CHANNEL
+    ) {
+      return;
+    }
+
+    const requestId = String(event.data.requestId || '');
+    if (!requestId) {
+      return;
+    }
+
+    try {
+      if (event.data.type === 'connect') {
+        postBridgeMessage(event.source, event.origin, {
+          type: 'bridge-ack',
+          requestId,
+          version: BRIDGE_VERSION,
+        });
+        postBridgeMessage(event.source, event.origin, {
+          type: 'snapshot',
+          requestId,
+          payload: await buildBridgeSnapshot(),
+        });
+        return;
+      }
+
+      if (event.data.type === 'snapshot') {
+        postBridgeMessage(event.source, event.origin, {
+          type: 'snapshot',
+          requestId,
+          payload: await buildBridgeSnapshot(),
+        });
+        return;
+      }
+
+      if (event.data.type === 'action') {
+        postBridgeMessage(event.source, event.origin, {
+          type: 'action-result',
+          requestId,
+          payload: await runBridgeAction(event.data.payload),
+        });
+      }
+    } catch (error) {
+      postBridgeMessage(event.source, event.origin, {
+        type: 'bridge-error',
+        requestId,
+        message:
+          error?.message ||
+          'SOOP 설정을 처리하는 중 오류가 발생했습니다.',
+      });
+    }
+  }
+
+  function startBridge() {
+    window.addEventListener('message', handleBridgeMessage);
+    if (window.opener) {
+      window.opener.postMessage(
+        {
+          channel: BRIDGE_CHANNEL,
+          type: 'ready',
+          version: BRIDGE_VERSION,
+        },
+        '*',
+      );
+    }
+  }
+
   function scheduleEnhance() {
     if (state.scheduled) {
       return;
@@ -2355,6 +2672,7 @@
       document.head.append(style);
     }
 
+    startBridge();
     scheduleEnhance();
 
     const observer = new MutationObserver(scheduleEnhance);
